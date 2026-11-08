@@ -2,7 +2,7 @@ import { FIREBASE_CONFIG, DOMINIO, ADMIN_PRINCIPAL } from './config.js';
 import { recordsFromSheets, indexArchive, reconcile, exportList, ledgerToList, ledgerFromList, mappingsFromList, suffix } from './core.js';
 import { openZip, readEntry, buildZip } from './zip.js';
 import { readXlsx } from './xlsx.js';
-import { buildPpt, slideTexts } from './ppt.js';
+import { buildPpt, slideTexts, photoLayout } from './ppt.js';
 import { analyzePpt, matchSites, pptStatus, planUpdate, updatePpt } from './pptmerge.js';
 
 const $ = id => document.getElementById(id);
@@ -254,12 +254,13 @@ function drawSlide() {
   const grid = $('slide-grid'); grid.replaceChildren();
   const codes = chosenFor(site).slice(0, 4);
   if (!codes.length) { grid.append(node('div', 'Pendiente', 'slot pend')); return; }
-  for (let i = 0; i < 4; i++) {
-    const photo = site.photos.find(p => p.code === codes[i]);
+  const photos = codes.map(c => site.photos.find(p => p.code === c)).filter(Boolean);
+  photoLayout(photos.length).forEach((b, i) => {
     const slot = node('div', undefined, 'slot');
-    if (photo) slot.append(picture(photo)); else slot.style.visibility = 'hidden';
+    Object.assign(slot.style, { left: b.x / 10 * 100 + '%', top: b.y / 5.625 * 100 + '%', width: b.w / 10 * 100 + '%', height: b.h / 5.625 * 100 + '%' });
+    slot.append(picture(photos[i]));
     grid.append(slot);
-  }
+  });
 }
 
 function drawEditor() {

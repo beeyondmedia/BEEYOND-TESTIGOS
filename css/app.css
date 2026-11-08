@@ -146,10 +146,10 @@ details.sec>.in{padding:0 14px 14px}
 .pin{flex:none;width:2.7cqw;height:2.7cqw;border-radius:50%;background:#fff;position:relative}
 .pin::after{content:"";position:absolute;inset:30%;border-radius:50%;background:#f34b63}
 .slide-city{position:absolute;left:1.6cqw;bottom:6.5cqw;font-size:1.67cqw}
-.slide-grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:4.5cqw 1cqw;padding:3.5cqw 2.5cqw 4.5cqw 1.7cqw}
-.slot{background:#e6e6e6;display:flex;align-items:center;justify-content:center;color:#7a7a7a;font-size:1.6cqw;overflow:hidden}
+.slide-grid{position:absolute;inset:0;pointer-events:none}
+.slot{position:absolute;background:#e6e6e6;display:flex;align-items:center;justify-content:center;color:#7a7a7a;font-size:1.6cqw;overflow:hidden}
 .slot img{width:100%;height:100%;object-fit:cover}
-.slot.pend{grid-column:1/-1;grid-row:1/-1;border:1px dashed #c8c8c8;font-size:2.2cqw}
+.slot.pend{left:34.9%;top:5.7%;width:59.5%;height:87.6%;border:1px dashed #c8c8c8;font-size:2.2cqw}
 .slide-logo{position:absolute;right:.6cqw;bottom:2cqw;writing-mode:vertical-rl;transform:rotate(180deg);color:#1f3b4b;font-weight:700;font-size:1.3cqw}
 
 /* ---------- tablas */

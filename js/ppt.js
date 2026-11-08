@@ -7,10 +7,25 @@ import { readEntry, openZip, buildZip } from './zip.js';
 const E = v => v / 914400;          // EMU -> pulgadas (medidas tomadas de la plantilla)
 const FONT = 'Rubik';
 const PHOTO_W = E(2715814), PHOTO_H = E(2036860);
-const PHOTO_SLOTS = [
+const GRID = [   // 4 fotos: cuadrícula 2 × 2 de la plantilla
   { x: E(3492917), y: E(320937) }, { x: E(6281882), y: E(320937) },
   { x: E(3492917), y: E(2783874) }, { x: E(6281882), y: E(2783874) },
 ];
+const CENTER_X = (GRID[0].x + GRID[1].x + PHOTO_W) / 2;   // centro horizontal del área de fotos
+
+// Acomodo de fotos según cuántas lleva la diapositiva (pulgadas; todas 4:3 y centradas):
+// 1 = una grande · 2 = una arriba de otra · 3 = dos arriba y una centrada abajo · 4 = cuadrícula.
+export function photoLayout(n) {
+  if (n >= 4) return GRID.map(g => ({ ...g, w: PHOTO_W, h: PHOTO_H }));
+  if (n === 3) return [...GRID.slice(0, 2), { x: CENTER_X - PHOTO_W / 2, y: GRID[2].y }].map(g => ({ ...g, w: PHOTO_W, h: PHOTO_H }));
+  if (n === 2) {
+    const h = 2.42, w = h * 4 / 3, gap = 0.13, y = (5.625 - (2 * h + gap)) / 2;
+    return [{ x: CENTER_X - w / 2, y, w, h }, { x: CENTER_X - w / 2, y: y + h + gap, w, h }];
+  }
+  if (n === 1) { const w = 6.0, h = 4.5; return [{ x: CENTER_X - w / 2, y: (5.625 - h) / 2, w, h }]; }
+  return [];
+}
+
 
 let loading;
 function loadLib() {
@@ -101,14 +116,16 @@ export async function renderPpt(opts) {
     slide.addImage({ data: logo, x: E(8712403), y: E(4673498), w: E(557601), h: E(124358), rotate: 270 });
 
     if (!photos.length) {
-      const x = PHOTO_SLOTS[0].x, y = PHOTO_SLOTS[0].y;
-      const w = PHOTO_SLOTS[1].x + PHOTO_W - x - 0.2, h = PHOTO_SLOTS[2].y + PHOTO_H - y;  // deja libre el logo
+      const x = GRID[0].x, y = GRID[0].y;
+      const w = GRID[1].x + PHOTO_W - x - 0.2, h = GRID[2].y + PHOTO_H - y;  // deja libre el logo
       slide.addShape('rect', { x, y, w, h, fill: { color: 'ECECEC' }, line: { color: 'C8C8C8', dashType: 'dash', width: 1 } });
       slide.addText('Pendiente', { x, y, w, h, align: 'center', valign: 'middle', fontSize: 20, color: '7A7A7A', fontFace: FONT, isTextBox: true });
     }
+    const boxes = photoLayout(photos.length);
     for (let i = 0; i < photos.length; i++) {
       const data = await photo4x3(await readEntry(opts.zip, opts.entryByName.get(photos[i].member)));
-      slide.addImage({ data, x: PHOTO_SLOTS[i].x, y: PHOTO_SLOTS[i].y, w: PHOTO_W, h: PHOTO_H });
+      const b = boxes[i];
+      slide.addImage({ data, x: b.x, y: b.y, w: b.w, h: b.h });
     }
     opts.onProgress?.(++done, opts.sites.length);
   }
