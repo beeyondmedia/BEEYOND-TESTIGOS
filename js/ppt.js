@@ -65,7 +65,7 @@ export function slideTexts(site) {
 /**
  * opts: { title, fileName, sites, selected: Map title->codes, perSlide, zip, entryByName, onProgress }
  */
-export async function buildPpt(opts) {
+export async function renderPpt(opts) {
   await loadLib();
   const [panel, header, headerIcon, corner, pin, logo] = await Promise.all(
     ['panel.png', 'header.png', 'header-icon.png', 'corner.png', 'pin.png', 'logo.png'].map(asset));
@@ -112,15 +112,26 @@ export async function buildPpt(opts) {
     }
     opts.onProgress?.(++done, opts.sites.length);
   }
-  // PptxGenJS agrega entradas de carpeta al ZIP; algunas nubes (OneDrive, Drive) fallan al abrirlas.
-  // Se reempaqueta sin ellas, copiando el contenido tal cual.
-  const raw = new Blob([await pptx.write({ outputType: 'arraybuffer' })]);
-  const zip = await openZip(raw);
-  const clean = await buildZip(zip.entries.filter(e => !e.dir).map(entry => ({ name: entry.name, zip, entry })));
+  const buffer = await pptx.write({ outputType: 'arraybuffer' });
+  return { buffer, slides: opts.sites.length, withPhotos, pending: opts.sites.length - withPhotos };
+}
+
+export const PPTX_TYPE = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+
+export function download(blob, fileName) {
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([clean], { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' }));
-  a.download = opts.fileName;
+  a.href = URL.createObjectURL(blob); a.download = fileName;
   document.body.append(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 60000);
-  return { slides: opts.sites.length, withPhotos, pending: opts.sites.length - withPhotos };
+}
+
+// PPT nuevo con todas las ubicaciones.
+export async function buildPpt(opts) {
+  const out = await renderPpt(opts);
+  // PptxGenJS agrega entradas de carpeta al ZIP; algunas nubes (OneDrive, Drive) fallan al abrirlas.
+  // Se reempaqueta sin ellas, copiando el contenido tal cual.
+  const zip = await openZip(new Blob([out.buffer]));
+  const clean = await buildZip(zip.entries.filter(e => !e.dir).map(entry => ({ name: entry.name, zip, entry })));
+  download(new Blob([clean], { type: PPTX_TYPE }), opts.fileName);
+  return out;
 }

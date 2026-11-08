@@ -4,107 +4,158 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Beeyond · Testigos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
 <link rel="stylesheet" href="css/app.css">
+<script>try{var t=localStorage.getItem("bym-tema");if(t==="dark")document.documentElement.dataset.theme="dark";}catch(e){}</script>
 </head>
 <body>
-<header>
-  <div><h1>Beeyond / Testigos</h1><small>Comprobación fotográfica por campaña</small></div>
-  <div class="who" id="who" hidden>
-    <span id="who-email"></span>
-    <button type="button" class="ghost" id="btn-admin" hidden>Usuarios</button>
-    <button type="button" class="ghost" id="btn-logout">Salir</button>
-  </div>
-</header>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="logo" viewBox="0 0 210 58"><path d="M3 38v15h14" fill="none" stroke="currentColor" stroke-width="5"/><text x="20" y="44" font-family="Rubik,Arial,sans-serif" font-weight="600" font-size="44" textLength="166" lengthAdjust="spacingAndGlyphs" fill="currentColor">Beeyond</text><path d="M193 5h14v15" fill="none" stroke="currentColor" stroke-width="5"/></symbol></svg>
 
-<main>
-  <div id="demo-banner" class="warning" hidden>Modo demostración: los datos se guardan solo en este navegador y no se usa Firebase.</div>
+<div id="screen-loading" class="login"><svg class="logo" role="img" aria-label="Beeyond"><use href="#logo"/></svg><p class="loading-msg">Cargando…</p></div>
 
-  <section id="screen-loading"><p class="muted">Cargando…</p></section>
-
-  <section id="screen-login" hidden>
-    <h2>Iniciar sesión</h2>
+<div id="screen-login" class="login" hidden>
+  <svg class="logo" role="img" aria-label="Beeyond"><use href="#logo"/></svg>
+  <form onsubmit="return false">
+    <h1>Testigos</h1>
     <p>Entra con tu cuenta de Google <strong>@beeyondmedia.com</strong>. Solo pueden entrar las personas que el administrador haya dado de alta.</p>
-    <button type="button" id="btn-login">Entrar con Google</button>
-    <p id="login-msg" class="error-text" role="alert"></p>
-  </section>
+    <button type="button" class="btn primary big" id="btn-login">Entrar con Google</button>
+    <div id="login-msg" class="msg err" role="alert" hidden></div>
+  </form>
+</div>
 
-  <section id="screen-denied" hidden>
-    <h2>Sin acceso</h2>
+<div id="screen-denied" class="login" hidden>
+  <svg class="logo" role="img" aria-label="Beeyond"><use href="#logo"/></svg>
+  <form onsubmit="return false">
+    <h1>Sin acceso</h1>
     <p id="denied-msg"></p>
-    <button type="button" class="secondary" id="btn-logout-2">Usar otra cuenta</button>
-  </section>
+    <button type="button" class="btn" id="btn-logout-2">Usar otra cuenta</button>
+  </form>
+</div>
 
-  <div id="screen-app" hidden>
-    <section>
-      <h2>1. Cargar campaña</h2>
-      <div class="row">
-        <label>Identificador de campaña
-          <input id="campaign" list="campaign-list" value="mercado-pago-buen-fin-2026" pattern="[a-z0-9\-]+" autocomplete="off">
-          <datalist id="campaign-list"></datalist>
-        </label>
-        <label>Plan de campaña · XLSX<input type="file" id="plan" accept=".xlsx"></label>
-        <label>Reporte Media Nitro · XLSX<input type="file" id="report" accept=".xlsx"></label>
-        <label>Fotografías originales · ZIP<input type="file" id="photos" accept=".zip"></label>
-        <button id="load" type="button">Revisar</button>
-      </div>
-      <div id="message" role="status" aria-live="polite"></div>
-      <p class="muted">Las fotos y los Excel se procesan <strong>en tu computadora</strong>: no se suben a internet. En Firebase solo se guardan, por campaña, las equivalencias confirmadas, la numeración de cada foto y la selección para la diapositiva, compartidas con el equipo. Un lote diferente limpia la selección; volver a revisar el mismo lote la conserva.</p>
-    </section>
-
-    <section id="review" hidden>
-      <h2>2. Confirmar ubicaciones</h2>
-      <div id="summary"></div>
-      <div id="unresolved"></div>
-      <details><summary id="extra-label">Archivos adicionales</summary><pre id="extras"></pre></details>
-      <details><summary>Faltantes y conflictos</summary><pre id="issues"></pre></details>
-    </section>
-
-    <section id="editor" hidden>
-      <h2>3. Seleccionar fotos y revisar diapositiva</h2>
-      <div class="work">
-        <aside class="sites-wrap"><input id="site-filter" type="search" placeholder="Buscar ubicación…" aria-label="Buscar ubicación"><div id="sites" class="sites"></div></aside>
-        <div>
-          <div class="row">
-            <label>Espacios por diapositiva<select id="layout"><option>2</option><option>3</option><option selected>4</option></select></label>
-            <label>Cara / versión del grupo<input id="group" placeholder="Ej. cara A · 24 MSI"></label>
-            <button id="save" type="button">Guardar selección</button>
-          </div>
-          <div id="photos-grid" class="photos"></div>
-          <div class="slide">
-            <div class="slide-head"><span id="campaign-title"></span><strong>Beeyond</strong></div>
-            <div class="slide-title" id="slide-title"></div>
-            <div id="slide-grid" class="slide-grid"></div>
-          </div>
-          <p class="muted">Vista preliminar de acomodo. La generación final deberá conservar la plantilla PPT aprobada. No se alteran las fotografías originales.</p>
-        </div>
-      </div>
-    </section>
-
-    <section id="delivery" hidden>
-      <h2>4. Descargar y entregar</h2>
-      <div class="row">
-        <label>Título de la presentación<input id="ppt-title" placeholder="Ej. MP BUEN FIN PREVIA"></label>
-        <button id="export" type="button">Descargar ZIP de fotos renombradas</button>
-        <button id="export-ppt" type="button">Descargar PPT</button>
-        <button type="button" class="secondary" disabled>Google Slides · pendiente</button>
-      </div>
-      <p class="muted"><strong>ZIP:</strong> todas las fotos vinculadas del lote, aunque no estén seleccionadas, copiadas tal cual y sin recomprimir. Las fotos sin vincular quedan fuera.<br><strong>PPT:</strong> con el diseño de las presentaciones de Beeyond. Una diapositiva por cada ubicación del plan, en el orden del plan, con hasta 4 fotos: las elegidas o, si no elegiste, las primeras vinculadas. Las ubicaciones sin fotos salen como <em>Pendiente</em>. Dentro del PPT las fotos se recortan a 4:3 y se reducen para que no pese demasiado.</p>
-    </section>
-  </div>
-
-  <section id="screen-admin" hidden>
-    <h2>Usuarios con acceso</h2>
-    <p class="muted">Acceso = cuenta de Google verificada del dominio <strong>@beeyondmedia.com</strong> <strong>y</strong> alta activa en esta lista. Las reglas de Firestore lo validan en el servidor.</p>
-    <div class="row">
-      <label>Correo<input id="new-email" type="email" placeholder="nombre@beeyondmedia.com"></label>
-      <label>Rol<select id="new-rol"><option value="usuario">Usuario</option><option value="admin">Administrador</option></select></label>
-      <button type="button" id="btn-add-user">Dar de alta</button>
+<div id="shell" class="shell" hidden>
+  <aside class="side">
+    <div class="brand">
+      <svg class="logo" role="img" aria-label="Beeyond"><use href="#logo"/></svg>
+      <b>Testigos</b>
+      <small>Comprobación fotográfica por campaña</small>
     </div>
-    <p id="admin-msg" role="status"></p>
-    <table class="users"><thead><tr><th>Correo</th><th>Rol</th><th>Estado</th><th></th></tr></thead><tbody id="users-body"></tbody></table>
-    <button type="button" class="secondary" id="btn-back">Volver a campañas</button>
-  </section>
-</main>
+    <nav class="navgroup" aria-label="Secciones">
+      <span>Trabajo</span>
+      <a href="#" id="nav-app" aria-current="page">Campaña</a>
+      <a href="#" id="nav-admin" hidden>Usuarios</a>
+    </nav>
+    <div class="me">
+      <b id="who-email"></b>
+      <span class="note">Las fotos y los Excel se procesan en tu computadora; no se suben a internet.</span>
+      <div class="row2">
+        <button type="button" class="btn small" id="btn-logout">Salir</button>
+        <button type="button" class="btn small themebtn" id="btn-theme">Tema oscuro</button>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div id="demo-banner" class="demo" hidden>Modo demostración: los datos se guardan solo en este navegador y no se usa Firebase.</div>
+
+    <!-- ===================== CAMPAÑA ===================== -->
+    <div id="view-app">
+      <div class="pagehead">
+        <h1>Campaña</h1>
+        <div class="steps" id="steps"><span class="on">1. Archivos</span><span>2. Ubicaciones</span><span>3. Fotos</span><span>4. Entregar</span></div>
+      </div>
+
+      <section class="panel stack">
+        <h2>1. Archivos del lote</h2>
+        <div class="files">
+          <label class="field"><span>Identificador de campaña</span>
+            <input id="campaign" type="text" list="campaign-list" value="mercado-pago-buen-fin-2026" pattern="[a-z0-9\-]+" autocomplete="off">
+            <datalist id="campaign-list"></datalist>
+          </label>
+          <label class="field file"><span>Plan de campaña · XLSX</span><input type="file" id="plan" accept=".xlsx"><small class="note" id="plan-name"></small></label>
+          <label class="field file"><span>Reporte Media Nitro · XLSX</span><input type="file" id="report" accept=".xlsx"><small class="note" id="report-name"></small></label>
+          <label class="field file"><span>Fotografías originales · ZIP</span><input type="file" id="photos" accept=".zip"><small class="note" id="photos-name"></small></label>
+          <label class="field file"><span>PPT ya hecha · opcional</span><input type="file" id="ppt" accept=".pptx"><small class="note" id="ppt-name"></small></label>
+        </div>
+        <div class="row">
+          <button id="load" type="button" class="btn primary">Revisar</button>
+          <span class="note">Si cargas una PPT ya hecha, la app solo agrega las ubicaciones que le faltan y completa las que quedaron como <em>Pendiente</em>.</span>
+        </div>
+        <div id="message" class="msg" role="status" aria-live="polite" hidden></div>
+      </section>
+
+      <section id="review" class="panel stack" hidden>
+        <h2>2. Confirmar ubicaciones</h2>
+        <div id="summary" class="summary"></div>
+        <div id="unresolved" class="stack"></div>
+        <details class="sec"><summary id="extra-label">Archivos adicionales</summary><div class="in"><pre id="extras"></pre></div></details>
+        <details class="sec"><summary>Faltantes y conflictos</summary><div class="in"><pre id="issues"></pre></div></details>
+      </section>
+
+      <section id="editor" class="panel stack" hidden>
+        <h2>3. Elegir fotos por ubicación</h2>
+        <div class="toolbar">
+          <div class="seg" id="filters" role="group" aria-label="Filtrar ubicaciones"></div>
+          <label class="grow">Buscar<input id="site-filter" type="search" placeholder="Ubicación o Nombre Crudos…"></label>
+        </div>
+        <div class="work">
+          <div class="sites" id="sites"></div>
+          <div class="stack">
+            <div class="sitehead">
+              <div><h3 id="site-name"></h3><span class="sub" id="site-sub"></span></div>
+              <div class="row">
+                <label class="field"><span>Fotos por diapositiva</span><select id="layout"><option>2</option><option>3</option><option selected>4</option></select></label>
+                <button id="save" type="button" class="btn primary">Guardar selección</button>
+              </div>
+            </div>
+            <div id="photos-grid" class="photogrid"></div>
+            <div class="slide" aria-label="Vista previa de la diapositiva">
+              <div class="slide-panel">
+                <div class="slide-band" id="slide-campaign"></div>
+                <div class="slide-loc"><span class="pin" aria-hidden="true"></span><div><div id="slide-location"></div><div id="slide-format" class="slide-format"></div></div></div>
+                <div class="slide-city" id="slide-city"></div>
+              </div>
+              <div id="slide-grid" class="slide-grid"></div>
+              <span class="slide-logo">Beeyond</span>
+            </div>
+            <p class="note">Vista previa. Si no eliges fotos, el PPT usa las primeras vinculadas. Las fotos originales no se alteran.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="delivery" class="panel stack" hidden>
+        <h2>4. Descargar y entregar</h2>
+        <div class="row">
+          <label class="field grow"><span>Título de la presentación</span><input id="ppt-title" type="text" placeholder="Ej. MP BUEN FIN PREVIA"></label>
+        </div>
+        <div id="ppt-plan" class="msg" hidden></div>
+        <div class="row">
+          <button id="update-ppt" type="button" class="btn primary" hidden>Actualizar PPT cargada</button>
+          <button id="export-ppt" type="button" class="btn">Descargar PPT completa nueva</button>
+          <button id="export" type="button" class="btn">Descargar ZIP de fotos renombradas</button>
+        </div>
+        <p class="note"><b>Actualizar PPT cargada:</b> conserva tu presentación tal cual y solo agrega, en el orden del plan, las ubicaciones que le faltan y reemplaza las que estaban como <em>Pendiente</em> y ya tienen fotos.<br>
+        <b>PPT completa nueva:</b> una diapositiva por cada ubicación del plan con el diseño de Beeyond; sin fotos = <em>Pendiente</em>. Las fotos se recortan a 4:3 y se reducen dentro del PPT.<br>
+        <b>ZIP:</b> todas las fotos vinculadas, renombradas con el Nombre Crudos y copiadas tal cual, sin recomprimir.</p>
+      </section>
+    </div>
+
+    <!-- ===================== USUARIOS ===================== -->
+    <div id="view-admin" hidden>
+      <div class="pagehead"><h1>Usuarios</h1></div>
+      <section class="panel stack">
+        <p class="note">Acceso = cuenta de Google verificada <b>@beeyondmedia.com</b> <b>y</b> alta activa en esta lista. Las reglas de Firestore lo validan en el servidor.</p>
+        <div class="row">
+          <label class="field grow"><span>Correo</span><input id="new-email" type="email" placeholder="nombre@beeyondmedia.com"></label>
+          <label class="field"><span>Rol</span><select id="new-rol"><option value="usuario">Usuario</option><option value="admin">Administrador</option></select></label>
+          <button type="button" class="btn primary" id="btn-add-user">Dar de alta</button>
+        </div>
+        <div id="admin-msg" class="msg" role="status" hidden></div>
+        <div class="tablebox"><table><thead><tr><th>Correo</th><th>Rol</th><th>Estado</th><th></th></tr></thead><tbody id="users-body"></tbody></table></div>
+      </section>
+    </div>
+  </main>
+</div>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

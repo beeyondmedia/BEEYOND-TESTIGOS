@@ -62,12 +62,15 @@ Entra quien tenga cuenta de Google **verificada @beeyondmedia.com** y además **
 
 ## Uso
 
-1. Escribe o elige el **identificador de campaña** (minúsculas, números y guiones; ej. `mercado-pago-buen-fin-2026`). Equivalencias y numeración se guardan bajo ese identificador.
-2. Elige el **plan XLSX** (columnas Ubicación y Nombre Crudos), el **reporte de Media Nitro XLSX** (Dirección y FotoCódigos) y el **ZIP original de fotos**. Presiona **Revisar**.
-3. Confirma las direcciones pendientes eligiendo su Nombre Crudos.
-4. Por ubicación, elige hasta 4 fotos y la cara/versión, y presiona **Guardar selección**.
-5. **Descargar ZIP de fotos renombradas** (incluye todas las fotos vinculadas, no solo las elegidas).
-6. **Descargar PPT** (con el diseño de las presentaciones de Beeyond, tomado de *MP BUEN FIN PREVIA*): una diapositiva por ubicación del plan, en su orden, con título de la campaña, número + ubicación, tipo de medio, ciudad y hasta 4 fotos (las elegidas o las primeras vinculadas). Sin fotos = *Pendiente*. El tipo de medio sale de una columna Formato/Tipo de medio del plan o, si no existe, del Nombre Crudos (`N. CIUDAD_TIPO_Nombre`). Gráficos de la plantilla en `assets/ppt/`. Se genera en el navegador con PptxGenJS (copia local en `js/vendor`, licencia MIT).
+1. **Archivos del lote.** Escribe o elige el identificador de campaña (minúsculas, números y guiones; ej. `mercado-pago-buen-fin-2026`) y elige el **plan XLSX**, el **reporte de Media Nitro XLSX** y el **ZIP original de fotos**. Opcional: la **PPT ya hecha** de esa campaña. Presiona **Revisar**.
+2. **Confirmar ubicaciones.** Elige el Nombre Crudos de las direcciones que no coincidieron solas. Queda guardado para toda la campaña.
+3. **Elegir fotos.** Filtros: *Todas*, *Con fotos*, *Pendientes (sin fotos)*, *Con fotos sin elegir* y, si cargaste una PPT, *Por agregar o completar en PPT*. Elige hasta 4 fotos por ubicación y presiona **Guardar selección**. Si no eliges, se usan las primeras vinculadas.
+4. **Entregar.**
+   - **Actualizar PPT cargada:** conserva la presentación tal cual y solo agrega, en el orden del plan, las ubicaciones que le faltan, y reemplaza las diapositivas que estaban como *Pendiente* (sin fotos) cuando ya hay fotos. Las diapositivas se reconocen por el número del Nombre Crudos (`29. TAMARINDOS` ↔ `29. CDMX_LANDMARK_Tamarindos`). No carga la presentación completa en memoria: copia tal cual todo lo que no cambia.
+   - **PPT completa nueva:** una diapositiva por ubicación del plan con el diseño de las presentaciones de Beeyond (tomado de *MP BUEN FIN PREVIA*). El tipo de medio sale de una columna Formato/Tipo de medio del plan o, si no existe, del Nombre Crudos (`N. CIUDAD_TIPO_Nombre`). Gráficos de la plantilla en `assets/ppt/`.
+   - **ZIP de fotos renombradas:** todas las fotos vinculadas, no solo las elegidas.
+
+La interfaz usa los colores de Beeyond (igual que la app de Comprobación) y tiene tema claro y oscuro.
 
 ## Pendiente (igual que en la versión local)
 
