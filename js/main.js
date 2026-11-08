@@ -148,6 +148,7 @@ function render(result, seleccion) {
   drawSites(); drawEditor();
   $('export').disabled = !c.linked || !!result.conflicts.length;
   $('export-ppt').disabled = !result.sites.length;
+  if (!$('ppt-title').value) $('ppt-title').value = defaultTitle();
 }
 
 function drawSites() {
@@ -240,16 +241,26 @@ async function exportZip() {
   finally { button.disabled = false; }
 }
 
+const titleKey = id => 'beeyond-ppt-title:' + id;
+function defaultTitle() {
+  let saved = null;
+  try { saved = localStorage.getItem(titleKey(cid())); } catch { /* sin almacenamiento */ }
+  return saved || $('campaign').value.replaceAll('-', ' ').toUpperCase();
+}
+
 async function exportPpt() {
   const button = $('export-ppt'); button.disabled = true;
   try {
+    const title = $('ppt-title').value.trim() || defaultTitle();
+    try { localStorage.setItem(titleKey(cid()), title); } catch { /* sin almacenamiento */ }
     message('Armando PPT…');
     const out = await buildPpt({
-      campaign: cid(), sites: state.result.sites, selected: state.selected, groups: state.groups,
+      title, fileName: title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '-') + '.pptx',
+      sites: state.result.sites, selected: state.selected,
       perSlide: Number($('layout').value), zip: state.zip, entryByName: state.entryByName,
       onProgress: (n, total) => message(`Armando PPT… ${n} de ${total} ubicaciones`),
     });
-    message(`PPT listo: ${out.slides} diapositivas de ubicaciones (${out.withPhotos} con fotos, ${out.pending} pendientes) más la portada.`);
+    message(`PPT listo: ${out.slides} diapositivas (${out.withPhotos} con fotos, ${out.pending} pendientes).`);
   } catch (e) { console.error(e); message(explain(e), true); }
   finally { button.disabled = false; }
 }
@@ -350,7 +361,7 @@ async function start() {
     drawEditor();
   };
   $('campaign').oninput = () => {
-    state.result = null; state.selected.clear();
+    state.result = null; state.selected.clear(); $('ppt-title').value = '';
     for (const id of ['review', 'editor', 'delivery']) $(id).hidden = true;
     message('Elige los archivos (o vuelve a presionar Revisar para usar los mismos) para esta campaña.');
   };

@@ -65,7 +65,8 @@ export function reconcile(report, plan, archives, mappings = {}, ledgerIn = {}) 
     const title = String(row.NOMBRECRUDOS ?? '').trim();
     if (!title) continue;
     if (byTitle.has(title)) throw new Error('Nombre Crudos repetido en el plan: ' + title);
-    const site = { title, location: row.UBICACION ?? '', provider: row.MEDIAOWNER ?? '', city: row.CIUDAD ?? '', photos: [] };
+    const format = row.FORMATO ?? row.TIPODEMEDIO ?? row.TIPODESOPORTE ?? row.TIPO ?? row.MEDIO ?? '';
+    const site = { title, location: row.UBICACION ?? '', provider: row.MEDIAOWNER ?? '', city: row.CIUDAD ?? '', format, photos: [] };
     sites.push(site); byTitle.set(title, site);
   }
   const ledger = { ...ledgerIn };
