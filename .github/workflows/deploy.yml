@@ -1,0 +1,49 @@
+# Cada push a main: corre las pruebas y publica la app en Firebase Hosting
+# (https://beeyond-testigos.web.app) junto con las reglas de Firestore.
+# Requiere el secreto FIREBASE_SERVICE_ACCOUNT (ver README, paso 4).
+name: Pruebas y publicación
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pruebas:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+
+  publicar:
+    needs: pruebas
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Revisar secreto
+        id: secreto
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$SA" ]; then
+            echo "::warning::Falta el secreto FIREBASE_SERVICE_ACCOUNT; no se publica en Firebase Hosting."
+            echo "listo=no" >> "$GITHUB_OUTPUT"
+          else
+            echo "listo=si" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@v4
+        if: steps.secreto.outputs.listo == 'si'
+        with:
+          node-version: 22
+      - uses: google-github-actions/auth@v2
+        if: steps.secreto.outputs.listo == 'si'
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: Publicar en Firebase
+        if: steps.secreto.outputs.listo == 'si'
+        run: npx --yes firebase-tools@13 deploy --only hosting,firestore:rules --project beeyond-testigos --non-interactive

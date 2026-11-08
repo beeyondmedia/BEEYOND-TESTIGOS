@@ -1,0 +1,57 @@
+rules_version = '2';
+
+// =====================================================================
+// Reglas de seguridad — Beeyond Testigos
+// Acceso = cuenta Google verificada @beeyondmedia.com Y alta activa en /usuarios/{correo}.
+// El administrador principal entra sin alta previa y crea la suya.
+// Altas, cambios y bajas de usuarios: solo administradores. Nada se borra físicamente.
+// Todo lo no declarado se niega.
+// =====================================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null
+        && request.auth.token.email is string
+        && request.auth.token.email_verified == true;
+    }
+    function myEmail() { return request.auth.token.email.lower(); }
+    function domainOk() { return signedIn() && myEmail().matches('^[^@]+@beeyondmedia[.]com$'); }
+    function principal() { return domainOk() && myEmail() == 'eliot.fabela@beeyondmedia.com'; }
+    function myDoc() { return /databases/$(database)/documents/usuarios/$(myEmail()); }
+    function active() { return domainOk() && exists(myDoc()) && get(myDoc()).data.activo == true; }
+    function admin() { return principal() || (active() && get(myDoc()).data.rol == 'admin'); }
+
+    // ---------- usuarios (id del documento = correo en minúsculas)
+    match /usuarios/{correo} {
+      allow get: if domainOk() && (correo == myEmail() || admin());
+      allow list: if admin();
+      allow create, update: if admin()
+        && correo.matches('^[a-z0-9._%+-]+@beeyondmedia[.]com$')
+        && request.resource.data.keys().hasOnly(['rol', 'activo', 'alta', 'altaPor', 'actualizado', 'actualizadoPor'])
+        && request.resource.data.rol in ['usuario', 'admin']
+        && request.resource.data.activo is bool
+        && request.resource.data.actualizadoPor == myEmail()
+        // El principal no puede quedar dado de baja ni perder el rol de administrador.
+        && !(correo == 'eliot.fabela@beeyondmedia.com'
+             && (request.resource.data.activo != true || request.resource.data.rol != 'admin'))
+        // Nadie se da de baja ni se quita el rol a sí mismo por accidente.
+        && !(correo == myEmail() && !principal()
+             && (request.resource.data.activo != true || request.resource.data.rol != 'admin'));
+      allow delete: if false;
+    }
+
+    // ---------- campañas: equivalencias, numeración y selección compartidas
+    match /campanas/{cid} {
+      allow read: if active();
+      allow create, update: if active()
+        && cid.matches('^[a-z0-9-]{1,70}$')
+        && request.resource.data.keys().hasOnly(['equivalencias', 'numeracion', 'seleccion', 'loteFirma', 'actualizado', 'actualizadoPor'])
+        && request.resource.data.equivalencias is list
+        && request.resource.data.numeracion is list
+        && request.resource.data.seleccion is list
+        && request.resource.data.actualizadoPor == myEmail();
+      allow delete: if false;
+    }
+  }
+}

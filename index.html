@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Beeyond · Testigos</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<header>
+  <div><h1>Beeyond / Testigos</h1><small>Comprobación fotográfica por campaña</small></div>
+  <div class="who" id="who" hidden>
+    <span id="who-email"></span>
+    <button type="button" class="ghost" id="btn-admin" hidden>Usuarios</button>
+    <button type="button" class="ghost" id="btn-logout">Salir</button>
+  </div>
+</header>
+
+<main>
+  <div id="demo-banner" class="warning" hidden>Modo demostración: los datos se guardan solo en este navegador y no se usa Firebase.</div>
+
+  <section id="screen-loading"><p class="muted">Cargando…</p></section>
+
+  <section id="screen-login" hidden>
+    <h2>Iniciar sesión</h2>
+    <p>Entra con tu cuenta de Google <strong>@beeyondmedia.com</strong>. Solo pueden entrar las personas que el administrador haya dado de alta.</p>
+    <button type="button" id="btn-login">Entrar con Google</button>
+    <p id="login-msg" class="error-text" role="alert"></p>
+  </section>
+
+  <section id="screen-denied" hidden>
+    <h2>Sin acceso</h2>
+    <p id="denied-msg"></p>
+    <button type="button" class="secondary" id="btn-logout-2">Usar otra cuenta</button>
+  </section>
+
+  <div id="screen-app" hidden>
+    <section>
+      <h2>1. Cargar campaña</h2>
+      <div class="row">
+        <label>Identificador de campaña
+          <input id="campaign" list="campaign-list" value="mercado-pago-buen-fin-2026" pattern="[a-z0-9\-]+" autocomplete="off">
+          <datalist id="campaign-list"></datalist>
+        </label>
+        <label>Plan de campaña · XLSX<input type="file" id="plan" accept=".xlsx"></label>
+        <label>Reporte Media Nitro · XLSX<input type="file" id="report" accept=".xlsx"></label>
+        <label>Fotografías originales · ZIP<input type="file" id="photos" accept=".zip"></label>
+        <button id="load" type="button">Revisar</button>
+      </div>
+      <div id="message" role="status" aria-live="polite"></div>
+      <p class="muted">Las fotos y los Excel se procesan <strong>en tu computadora</strong>: no se suben a internet. En Firebase solo se guardan, por campaña, las equivalencias confirmadas, la numeración de cada foto y la selección para la diapositiva, compartidas con el equipo. Un lote diferente limpia la selección; volver a revisar el mismo lote la conserva.</p>
+    </section>
+
+    <section id="review" hidden>
+      <h2>2. Confirmar ubicaciones</h2>
+      <div id="summary"></div>
+      <div id="unresolved"></div>
+      <details><summary id="extra-label">Archivos adicionales</summary><pre id="extras"></pre></details>
+      <details><summary>Faltantes y conflictos</summary><pre id="issues"></pre></details>
+    </section>
+
+    <section id="editor" hidden>
+      <h2>3. Seleccionar fotos y revisar diapositiva</h2>
+      <div class="work">
+        <aside class="sites-wrap"><input id="site-filter" type="search" placeholder="Buscar ubicación…" aria-label="Buscar ubicación"><div id="sites" class="sites"></div></aside>
+        <div>
+          <div class="row">
+            <label>Espacios por diapositiva<select id="layout"><option>2</option><option>3</option><option selected>4</option></select></label>
+            <label>Cara / versión del grupo<input id="group" placeholder="Ej. cara A · 24 MSI"></label>
+            <button id="save" type="button">Guardar selección</button>
+          </div>
+          <div id="photos-grid" class="photos"></div>
+          <div class="slide">
+            <div class="slide-head"><span id="campaign-title"></span><strong>Beeyond</strong></div>
+            <div class="slide-title" id="slide-title"></div>
+            <div id="slide-grid" class="slide-grid"></div>
+          </div>
+          <p class="muted">Vista preliminar de acomodo. La generación final deberá conservar la plantilla PPT aprobada. No se alteran las fotografías originales.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="delivery" hidden>
+      <h2>4. Descargar y entregar</h2>
+      <div class="row">
+        <button id="export" type="button">Descargar ZIP de fotos renombradas</button>
+        <button type="button" disabled>Crear / actualizar Google Slides · pendiente</button>
+      </div>
+      <p class="muted">El ZIP incluye todas las fotos vinculadas del lote, aunque no estén seleccionadas para la diapositiva. Las fotos sin vincular quedan fuera. Las imágenes se copian tal cual, sin recomprimir.</p>
+    </section>
+  </div>
+
+  <section id="screen-admin" hidden>
+    <h2>Usuarios con acceso</h2>
+    <p class="muted">Acceso = cuenta de Google verificada del dominio <strong>@beeyondmedia.com</strong> <strong>y</strong> alta activa en esta lista. Las reglas de Firestore lo validan en el servidor.</p>
+    <div class="row">
+      <label>Correo<input id="new-email" type="email" placeholder="nombre@beeyondmedia.com"></label>
+      <label>Rol<select id="new-rol"><option value="usuario">Usuario</option><option value="admin">Administrador</option></select></label>
+      <button type="button" id="btn-add-user">Dar de alta</button>
+    </div>
+    <p id="admin-msg" role="status"></p>
+    <table class="users"><thead><tr><th>Correo</th><th>Rol</th><th>Estado</th><th></th></tr></thead><tbody id="users-body"></tbody></table>
+    <button type="button" class="secondary" id="btn-back">Volver a campañas</button>
+  </section>
+</main>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
