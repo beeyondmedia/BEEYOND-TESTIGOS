@@ -2,6 +2,7 @@ import { FIREBASE_CONFIG, DOMINIO, ADMIN_PRINCIPAL } from './config.js';
 import { records, indexArchive, reconcile, exportList, ledgerToList, ledgerFromList, mappingsFromList, suffix } from './core.js';
 import { openZip, readEntry, buildZip } from './zip.js';
 import { readXlsx } from './xlsx.js';
+import { buildPpt } from './ppt.js';
 
 const $ = id => document.getElementById(id);
 const DEMO = new URLSearchParams(location.search).has('demo') || !FIREBASE_CONFIG.apiKey;
@@ -146,6 +147,7 @@ function render(result, seleccion) {
   if (!unique.size) list.append(node('p', 'Todas las direcciones tienen una relación confirmada o exacta.'));
   drawSites(); drawEditor();
   $('export').disabled = !c.linked || !!result.conflicts.length;
+  $('export-ppt').disabled = !result.sites.length;
 }
 
 function drawSites() {
@@ -238,6 +240,20 @@ async function exportZip() {
   finally { button.disabled = false; }
 }
 
+async function exportPpt() {
+  const button = $('export-ppt'); button.disabled = true;
+  try {
+    message('Armando PPT…');
+    const out = await buildPpt({
+      campaign: cid(), sites: state.result.sites, selected: state.selected, groups: state.groups,
+      perSlide: Number($('layout').value), zip: state.zip, entryByName: state.entryByName,
+      onProgress: (n, total) => message(`Armando PPT… ${n} de ${total} ubicaciones`),
+    });
+    message(`PPT listo: ${out.slides} diapositivas de ubicaciones (${out.withPhotos} con fotos, ${out.pending} pendientes) más la portada.`);
+  } catch (e) { console.error(e); message(explain(e), true); }
+  finally { button.disabled = false; }
+}
+
 async function refreshCampaigns() {
   try {
     const list = await backend.listCampaigns();
@@ -325,6 +341,7 @@ async function start() {
   $('load').onclick = load;
   $('save').onclick = saveSelection;
   $('export').onclick = exportZip;
+  $('export-ppt').onclick = exportPpt;
   $('site-filter').oninput = () => state.result && drawSites();
   $('layout').onchange = () => {
     if (!state.result) return;

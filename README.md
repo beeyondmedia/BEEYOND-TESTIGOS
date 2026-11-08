@@ -67,10 +67,11 @@ Entra quien tenga cuenta de Google **verificada @beeyondmedia.com** y además **
 3. Confirma las direcciones pendientes eligiendo su Nombre Crudos.
 4. Por ubicación, elige hasta 4 fotos y la cara/versión, y presiona **Guardar selección**.
 5. **Descargar ZIP de fotos renombradas** (incluye todas las fotos vinculadas, no solo las elegidas).
+6. **Descargar PPT**: portada + una diapositiva por ubicación del plan, en su orden, con las fotos elegidas (o las primeras vinculadas si no elegiste). Sin fotos = *Pendiente*. Se genera en el navegador con PptxGenJS (copia local en `js/vendor`, licencia MIT).
 
 ## Pendiente (igual que en la versión local)
 
-- Crear o actualizar la presentación de Google Slides por campaña con la plantilla aprobada (botón deshabilitado).
+- Usar la plantilla PPT aprobada (hoy el PPT usa un diseño propio de la app) y crear/actualizar Google Slides (botón deshabilitado).
 - Varios grupos de cara/versión por ubicación.
 - Límite práctico: una campaña guarda hasta unas 5,000 fotos numeradas (1 MB por documento de Firestore). Si se llega, usa un identificador nuevo.
 
