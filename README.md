@@ -26,29 +26,29 @@ Entra quien tenga cuenta de Google **verificada @beeyondmedia.com** y además **
 
 ## Instalación (una sola vez)
 
-### 1. Firebase (proyecto `beeyond-testigos`, ya creado)
+### 1. Firebase (proyecto "Beeyond Testigos", ID `beeyond-testigos-9f3e2`)
 
-1. <https://console.firebase.google.com> → proyecto **beeyond-testigos**.
+1. <https://console.firebase.google.com> → proyecto **Beeyond Testigos** (`beeyond-testigos-9f3e2`).
 2. **Compilación › Authentication › Comenzar › Método de acceso › Google › Habilitar.** Elige el correo de asistencia y guarda.
 3. **Compilación › Firestore Database › Crear base de datos** → modo **producción**, ubicación `nam5 (us-central)` o la más cercana.
 4. **Firestore › Reglas**: borra lo que haya, pega todo el contenido de `firestore.rules` y presiona **Publicar**.
-5. Si vas a usar GitHub Pages (paso 3): **Authentication › Configuración › Dominios autorizados › Agregar dominio** → `beeyondmedia.github.io`. (`beeyond-testigos.web.app` y `localhost` ya vienen autorizados.)
+5. Si vas a usar GitHub Pages (paso 3): **Authentication › Configuración › Dominios autorizados › Agregar dominio** → `beeyondmedia.github.io`. (`beeyond-testigos-9f3e2.web.app` y `localhost` ya vienen autorizados.)
 
 ### 2. GitHub
 
-1. En la organización `beeyondmedia` crea un repositorio nuevo llamado **`beeyond-testigos`** (vacío, sin README).
+1. En la organización `beeyondmedia` crea un repositorio nuevo llamado **`BEEYOND-TESTIGOS`** (vacío, sin README).
 2. Sube todos los archivos de esta carpeta (botón **Add file › Upload files**, arrastra el contenido, incluida la carpeta `.github`), o pide a Claude que los suba.
 
 ### 3. Publicar la página (elige una)
 
-**Opción A — Firebase Hosting (recomendada): `https://beeyond-testigos.web.app`**
+**Opción A — Firebase Hosting (recomendada): `https://beeyond-testigos-9f3e2.web.app`**
 
 1. Firebase → ⚙️ **Configuración del proyecto › Cuentas de servicio › Generar nueva clave privada**. Se descarga un `.json`. Guárdalo en un lugar seguro y no lo subas al repositorio.
 2. En Google Cloud (<https://console.cloud.google.com/iam-admin/iam?project=beeyond-testigos>) asegúrate de que esa cuenta de servicio (`firebase-adminsdk-…`) tenga los roles **Administrador de Firebase Hosting**, **Administrador de reglas de Firebase** y **Usuario de cuentas de servicio**. Si no publica por permisos, agrega temporalmente **Editor**.
 3. En GitHub, en el repositorio: **Settings › Secrets and variables › Actions › New repository secret**. Nombre: `FIREBASE_SERVICE_ACCOUNT`. Valor: pega el contenido completo del `.json`.
-4. **Actions › Pruebas y publicación › Run workflow** (o haz cualquier cambio en `main`). En 1–2 minutos queda en `https://beeyond-testigos.web.app`. Desde entonces cada cambio se publica solo, incluidas las reglas de Firestore.
+4. **Actions › Pruebas y publicación › Run workflow** (o haz cualquier cambio en `main`). En 1–2 minutos queda en `https://beeyond-testigos-9f3e2.web.app`. Desde entonces cada cambio se publica solo, incluidas las reglas de Firestore.
 
-**Opción B — GitHub Pages (sin claves): `https://beeyondmedia.github.io/beeyond-testigos/`**
+**Opción B — GitHub Pages (sin claves): `https://beeyondmedia.github.io/BEEYOND-TESTIGOS/`**
 
 1. En el repositorio: **Settings › Pages › Source: Deploy from a branch**, rama `main`, carpeta `/ (root)`.
 2. Agrega `beeyondmedia.github.io` como dominio autorizado (paso 1.5).

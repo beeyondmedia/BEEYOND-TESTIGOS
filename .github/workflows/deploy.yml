@@ -1,5 +1,5 @@
 # Cada push a main: corre las pruebas y publica la app en Firebase Hosting
-# (https://beeyond-testigos.web.app) junto con las reglas de Firestore.
+# (https://beeyond-testigos-9f3e2.web.app) junto con las reglas de Firestore.
 # Requiere el secreto FIREBASE_SERVICE_ACCOUNT (ver README, paso 4).
 name: Pruebas y publicación
 
@@ -46,4 +46,4 @@ jobs:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
       - name: Publicar en Firebase
         if: steps.secreto.outputs.listo == 'si'
-        run: npx --yes firebase-tools@13 deploy --only hosting,firestore:rules --project beeyond-testigos --non-interactive
+        run: npx --yes firebase-tools@13 deploy --only hosting,firestore:rules --project beeyond-testigos-9f3e2 --non-interactive
