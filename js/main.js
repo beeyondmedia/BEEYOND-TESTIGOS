@@ -1,5 +1,5 @@
 import { FIREBASE_CONFIG, DOMINIO, ADMIN_PRINCIPAL } from './config.js';
-import { records, indexArchive, reconcile, exportList, ledgerToList, ledgerFromList, mappingsFromList, suffix } from './core.js';
+import { recordsFromSheets, indexArchive, reconcile, exportList, ledgerToList, ledgerFromList, mappingsFromList, suffix } from './core.js';
 import { openZip, readEntry, buildZip } from './zip.js';
 import { readXlsx } from './xlsx.js';
 import { buildPpt, slideTexts } from './ppt.js';
@@ -12,7 +12,7 @@ let backend;
 
 const state = {
   user: null, access: null,
-  files: {}, parsed: {},           // archivos y su lectura en caché (por firma del archivo)
+  files: {}, parsed: {}, sheets: {}, // archivos, su lectura en caché (por firma) y la hoja usada
   zip: null, entryByName: new Map(),
   ppt: null, pptMatch: new Map(),  // PPT ya hecha (opcional) y su relación con las ubicaciones
   result: null, current: 0, filter: 'todas',
@@ -34,9 +34,13 @@ function view(name) {
   }
 }
 function steps(n) { [...$('steps').children].forEach((s, i) => s.classList.toggle('on', i < n)); }
+// "MERCADO LIBRE BUEN FIN Previa" -> "mercado-libre-buen-fin-previa"
+const slug = v => String(v).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 70).replace(/-+$/, '');
 function cid() {
-  const value = $('campaign').value.trim();
-  if (!/^[a-z0-9-]{1,70}$/.test(value)) throw Error('Identificador inválido: usa letras minúsculas, números y guiones.');
+  const value = slug($('campaign').value);
+  if (!value) throw Error('Escribe el nombre de la campaña.');
+  if ($('campaign').value !== value) $('campaign').value = value;
   return value;
 }
 function explain(e) {
@@ -79,8 +83,8 @@ async function parse(kind, file) {
   const cache = state.parsed[kind];
   if (cache && cache.sig === fileSig(file)) return cache.value;
   let value;
-  if (kind === 'plan') { message('Leyendo plan ' + file.name + '…'); value = records(await readXlsx(file), ['UBICACION', 'NOMBRECRUDOS'], 'el plan'); }
-  if (kind === 'report') { message('Leyendo reporte ' + file.name + '…'); value = records(await readXlsx(file), ['DIRECCION', 'FOTOCODIGOS'], 'el reporte'); }
+  if (kind === 'plan') { message('Leyendo plan ' + file.name + '…'); const r = await recordsFromSheets(await readXlsx(file), ['UBICACION', 'NOMBRECRUDOS'], 'el plan'); value = r.rows; state.sheets.plan = r.sheet; }
+  if (kind === 'report') { message('Leyendo reporte ' + file.name + '…'); const r = await recordsFromSheets(await readXlsx(file), ['DIRECCION', 'FOTOCODIGOS'], 'el reporte'); value = r.rows; state.sheets.report = r.sheet; }
   if (kind === 'photos') {
     message('Leyendo índice de ' + file.name + '…');
     const zip = await openZip(file);
@@ -120,9 +124,10 @@ async function load() {
     const out = await backend.updateCampaign(id, data => apply(data, firma));
     render(out.result, out.seleccion);
     const pend = new Set(out.result.unresolved.map(r => r.key)).size;
+    const hojas = ` Plan: hoja ${state.sheets.plan}. Reporte: hoja ${state.sheets.report}.`;
     message('Lote listo' + (out.cleared ? ' (lote nuevo: se limpió la selección anterior)' : '') + '.' +
       (pend ? ` Confirma ${plural(pend, 'dirección', 'direcciones')} en el paso 2.` : '') +
-      (state.ppt ? ` PPT cargada: ${plural(state.ppt.slides.length, 'diapositiva', 'diapositivas')}.` : ''), 'ok');
+      (state.ppt ? ` PPT cargada: ${plural(state.ppt.slides.length, 'diapositiva', 'diapositivas')}.` : '') + hojas, 'ok');
     refreshCampaigns();
   } catch (e) { console.error(e); message(explain(e), 'err'); }
   finally { button.disabled = false; }
@@ -483,6 +488,7 @@ async function start() {
     state.selected.set(site.title, (state.selected.get(site.title) || []).slice(0, Number($('layout').value)));
     drawEditor();
   };
+  $('campaign').onchange = () => { const v = slug($('campaign').value); if (v) $('campaign').value = v; };
   $('campaign').oninput = () => {
     state.result = null; state.selected.clear(); $('ppt-title').value = '';
     for (const id of ['review', 'editor', 'delivery']) $(id).hidden = true;

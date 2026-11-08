@@ -27,6 +27,17 @@ export function records(rows, required, label = 'el archivo') {
   throw new Error(`No se encontraron las columnas requeridas en ${label}: ` + required.join(', '));
 }
 
+// sheets: [{ name, hidden, rows: () => Promise<filas> }]. Busca la hoja que tenga las columnas requeridas,
+// primero entre las visibles. Así funciona aunque los datos no estén en la primera hoja.
+export async function recordsFromSheets(sheets, required, label = 'el archivo') {
+  const ordered = [...sheets.filter(s => !s.hidden), ...sheets.filter(s => s.hidden)];
+  for (const sheet of ordered) {
+    try { return { sheet: sheet.name, rows: records(await sheet.rows(), required, label) }; }
+    catch (e) { if (!/columnas requeridas/.test(e.message)) throw e; }
+  }
+  throw new Error(`No se encontraron las columnas ${required.join(' y ')} en ninguna hoja de ${label} (hojas: ${sheets.map(s => s.name).join(', ')}).`);
+}
+
 export function safeName(value) {
   // Restricciones de Windows y de rutas ZIP. El título original completo se conserva aparte.
   return value.replace(/[<>:"/\\|?*\x00-\x1f]/g, '-').replace(/[ .]+$/, '').slice(0, 200);
@@ -65,7 +76,7 @@ export function reconcile(report, plan, archives, mappings = {}, ledgerIn = {}) 
     const title = String(row.NOMBRECRUDOS ?? '').trim();
     if (!title) continue;
     if (byTitle.has(title)) throw new Error('Nombre Crudos repetido en el plan: ' + title);
-    const format = row.FORMATO ?? row.TIPODEMEDIO ?? row.TIPODESOPORTE ?? row.TIPO ?? row.MEDIO ?? '';
+    const format = row.VENUETYPE || row.TIPODEMEDIO || row.TIPODESOPORTE || row.TIPODEUBICACION || row.FORMATO || row.TIPO || '';
     const site = { title, location: row.UBICACION ?? '', provider: row.MEDIAOWNER ?? '', city: row.CIUDAD ?? '', format, photos: [] };
     sites.push(site); byTitle.set(title, site);
   }
