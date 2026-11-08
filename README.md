@@ -44,7 +44,7 @@ Entra quien tenga cuenta de Google **verificada @beeyondmedia.com** y además **
 **Opción A — Firebase Hosting (recomendada): `https://beeyond-testigos-9f3e2.web.app`**
 
 1. Firebase → ⚙️ **Configuración del proyecto › Cuentas de servicio › Generar nueva clave privada**. Se descarga un `.json`. Guárdalo en un lugar seguro y no lo subas al repositorio.
-2. En Google Cloud (<https://console.cloud.google.com/iam-admin/iam?project=beeyond-testigos>) asegúrate de que esa cuenta de servicio (`firebase-adminsdk-…`) tenga los roles **Administrador de Firebase Hosting**, **Administrador de reglas de Firebase** y **Usuario de cuentas de servicio**. Si no publica por permisos, agrega temporalmente **Editor**.
+2. En Google Cloud (<https://console.cloud.google.com/iam-admin/iam?project=beeyond-testigos-9f3e2>) asegúrate de que esa cuenta de servicio (`firebase-adminsdk-…`) tenga los roles **Administrador de Firebase Hosting**, **Administrador de reglas de Firebase** y **Usuario de cuentas de servicio**. Si no publica por permisos, agrega temporalmente **Editor**.
 3. En GitHub, en el repositorio: **Settings › Secrets and variables › Actions › New repository secret**. Nombre: `FIREBASE_SERVICE_ACCOUNT`. Valor: pega el contenido completo del `.json`.
 4. **Actions › Pruebas y publicación › Run workflow** (o haz cualquier cambio en `main`). En 1–2 minutos queda en `https://beeyond-testigos-9f3e2.web.app`. Desde entonces cada cambio se publica solo, incluidas las reglas de Firestore.
 
