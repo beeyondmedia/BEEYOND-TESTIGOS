@@ -44,7 +44,9 @@ export async function analyzePpt(file) {
     const srels = rels(await text(relsPath));
     let photos = 0;
     for (const p of xml.matchAll(/<p:pic>[\s\S]*?<\/p:pic>/g)) {
-      const g = xfrm(p[0]); if (!g) continue;
+      const g = xfrm(p[0]);
+      // Foto en marcador de imagen sin posición propia (hereda la del diseño): cuenta como foto.
+      if (!g) { if (/<p:ph\b/.test(p[0]) && /<a:blip\b/.test(p[0])) photos++; continue; }
       const a = g.cx * g.cy, cx = g.x + g.cx / 2;
       // Fotos = imágenes grandes del lado derecho; panel, íconos y logo no cuentan.
       if (a >= W * H * 0.03 && a <= W * H * 0.6 && cx >= W * 0.4) photos++;

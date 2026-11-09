@@ -64,19 +64,29 @@ function showFileName(kind) {
 
 // ---------------------------------------------------------------- fotos (miniaturas desde el ZIP local)
 const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg' };
+function readError(e) {
+  if (['NotReadableError', 'NotFoundError', 'SecurityError'].includes(e?.name)) {
+    return 'El navegador ya no puede leer el ZIP: se movió, se renombró, cambió o se está sincronizando (OneDrive / Drive) después de elegirlo. Vuelve a elegir el ZIP (de preferencia copiado en Descargas o Escritorio) y presiona Revisar.';
+  }
+  return e?.message || String(e);
+}
 function photoUrl(photo) {
   if (!state.urls.has(photo.code)) {
     const entry = state.entryByName.get(photo.member);
-    state.urls.set(photo.code, readEntry(state.zip, entry, MIME[suffix(photo.member)] || '').then(b => URL.createObjectURL(b)));
+    const p = entry
+      ? readEntry(state.zip, entry, MIME[suffix(photo.member)] || '').then(b => URL.createObjectURL(b))
+      : Promise.reject(new Error('La foto no está en el ZIP cargado. Vuelve a elegir el ZIP y presiona Revisar.'));
+    state.urls.set(photo.code, p);
+    p.catch(e => { console.error(photo.member, e); if (!state.readWarned) { state.readWarned = true; message(readError(e), 'err'); } });
   }
   return state.urls.get(photo.code);
 }
 function picture(photo) {
   const img = node('img'); img.alt = 'Evidencia ' + photo.code; img.decoding = 'async';
-  photoUrl(photo).then(u => { img.src = u; }, () => { img.alt = 'No se pudo leer ' + photo.code; });
+  photoUrl(photo).then(u => { img.src = u; }, () => { img.alt = 'No se pudo leer ' + photo.code; img.title = 'Revisa el aviso de arriba'; });
   return img;
 }
-function resetPhotos() { for (const p of state.urls.values()) p.then(u => URL.revokeObjectURL(u), () => {}); state.urls.clear(); }
+function resetPhotos() { for (const p of state.urls.values()) p.then(u => URL.revokeObjectURL(u), () => {}); state.urls.clear(); state.readWarned = false; }
 
 // ---------------------------------------------------------------- procesamiento
 async function parse(kind, file) {
@@ -111,14 +121,15 @@ async function load() {
     for (const kind of KINDS) {
       if (!state.files[kind]) throw Error('Falta elegir: ' + { plan: 'plan XLSX', report: 'reporte XLSX', photos: 'ZIP de fotografías' }[kind]);
     }
-    const before = state.parsed.photos?.sig;
     for (const kind of KINDS) await parse(kind, state.files[kind]);
-    state.ppt = state.files.ppt ? await parse('ppt', state.files.ppt) : null;
-    if (state.parsed.photos.sig !== before) {
+    // Siempre sincroniza el ZIP leído con el que usan miniaturas y descargas
+    // (antes, si algo fallaba después de leerlo, el siguiente intento quedaba sin fotos).
+    if (state.zip !== state.parsed.photos.value.zip) {
       resetPhotos();
       state.zip = state.parsed.photos.value.zip;
       state.entryByName = new Map(state.zip.entries.map(e => [e.name, e]));
     }
+    state.ppt = state.files.ppt ? await parse('ppt', state.files.ppt) : null;
     message('Conciliando y guardando numeración de la campaña…');
     const firma = KINDS.map(k => fileSig(state.files[k])).join('|');
     const out = await backend.updateCampaign(id, data => apply(data, firma));
@@ -129,7 +140,7 @@ async function load() {
       (pend ? ` Confirma ${plural(pend, 'dirección', 'direcciones')} en el paso 2.` : '') +
       (state.ppt ? ` PPT cargada: ${plural(state.ppt.slides.length, 'diapositiva', 'diapositivas')}.` : '') + hojas, 'ok');
     refreshCampaigns();
-  } catch (e) { console.error(e); message(explain(e), 'err'); }
+  } catch (e) { console.error(e); message(readError(e) === (e?.message || String(e)) ? explain(e) : readError(e), 'err'); }
   finally { button.disabled = false; }
 }
 
@@ -342,7 +353,7 @@ async function exportZip() {
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 60000);
     message(`ZIP listo: ${plural(items.length, 'foto renombrada', 'fotos renombradas')}.`, 'ok');
-  } catch (e) { message(explain(e), 'err'); }
+  } catch (e) { message(readError(e), 'err'); }
   finally { button.disabled = false; }
 }
 
@@ -371,7 +382,7 @@ async function exportPpt() {
     message('Armando PPT…');
     const out = await buildPpt({ ...pptOpts(title), fileName: safeFile(title) + '.pptx' });
     message(`PPT lista: ${plural(out.slides, 'diapositiva', 'diapositivas')} (${out.withPhotos} con fotos, ${out.pending} pendientes).`, 'ok');
-  } catch (e) { console.error(e); message(explain(e), 'err'); }
+  } catch (e) { console.error(e); message(readError(e), 'err'); }
   finally { button.disabled = false; }
 }
 
