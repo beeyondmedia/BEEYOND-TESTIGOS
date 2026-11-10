@@ -3,6 +3,7 @@
 // panel coral a la izquierda con título, ubicación, tipo de medio y ciudad; 4 fotos en cuadrícula.
 // Una diapositiva por ubicación del plan, en el orden del plan.
 import { readEntry, openZip, buildZip } from './zip.js';
+import { siteStatus } from './core.js';
 
 const E = v => v / 914400;          // EMU -> pulgadas (medidas tomadas de la plantilla)
 const FONT = 'Rubik';
@@ -22,7 +23,7 @@ export function photoLayout(n) {
     const h = 2.42, w = h * 4 / 3, gap = 0.13, y = (5.625 - (2 * h + gap)) / 2;
     return [{ x: CENTER_X - w / 2, y, w, h }, { x: CENTER_X - w / 2, y: y + h + gap, w, h }];
   }
-  if (n === 1) { const w = 6.0, h = 4.5; return [{ x: CENTER_X - w / 2, y: (5.625 - h) / 2, w, h }]; }
+  if (n === 1) { const w = 5.7, h = 4.275; return [{ x: CENTER_X - w / 2, y: (5.625 - h) / 2, w, h }]; }
   return [];
 }
 
@@ -77,6 +78,31 @@ export function slideTexts(site) {
   };
 }
 
+// Fotos y recuadro de estatus de una diapositiva. Con recuadro caben como máximo 3 fotos.
+export function slideContent(site, selected, perSlide) {
+  const status = siteStatus(site);
+  const max = Math.min(4, perSlide) - (status && site.photos.length ? 1 : 0);
+  const chosen = (selected || []).filter(c => site.photos.some(p => p.code === c));
+  // Si no se eligieron fotos, se usan las primeras vinculadas.
+  const codes = (chosen.length ? chosen : site.photos.map(p => p.code)).slice(0, Math.max(1, max));
+  return { photos: codes.map(c => site.photos.find(p => p.code === c)), status };
+}
+
+export const STATUS_COLORS = { 'Con observaciones': 'E63E5A', 'En revisión': 'B06D00', 'Pendiente': '7A7A7A' };
+
+// Recuadro que lee la app de Comprobación: se llama "BT-ESTATUS"; 1er párrafo = estatus, 2º = comentario.
+function addStatusCard(slide, b, { estatus, comentario }) {
+  const color = STATUS_COLORS[estatus] || '7A7A7A';
+  slide.addText([
+    { text: estatus.toUpperCase(), options: { bold: true, fontSize: b.w > 4 ? 22 : 15, color, breakLine: true } },
+    { text: comentario, options: { fontSize: b.w > 4 ? 16 : 11, color: '33414E' } },
+  ], {
+    shape: 'rect', x: b.x, y: b.y, w: b.w, h: b.h, objectName: 'BT-ESTATUS',
+    fill: { color: 'FFFFFF' }, line: { color, width: 2, ...(estatus === 'Pendiente' ? { dashType: 'dash' } : {}) },
+    align: 'center', valign: 'middle', fontFace: FONT, margin: 12, paraSpaceAfter: 6, fit: 'shrink',
+  });
+}
+
 /**
  * opts: { title, fileName, sites, selected: Map title->codes, perSlide, zip, entryByName, onProgress }
  */
@@ -92,10 +118,7 @@ export async function renderPpt(opts) {
 
   let done = 0, withPhotos = 0;
   for (const site of opts.sites) {
-    const chosen = (opts.selected.get(site.title) || []).filter(c => site.photos.some(p => p.code === c));
-    // Si no se eligieron fotos, se usan las primeras vinculadas.
-    const codes = (chosen.length ? chosen : site.photos.slice(0, opts.perSlide).map(p => p.code)).slice(0, 4);
-    const photos = codes.map(c => site.photos.find(p => p.code === c));
+    const { photos, status } = slideContent(site, opts.selected.get(site.title), opts.perSlide);
     if (photos.length) withPhotos++;
     const t = slideTexts(site);
 
@@ -115,18 +138,14 @@ export async function renderPpt(opts) {
     slide.addText(t.city, { ...white, x: E(145390), y: E(4550969), w: E(2854482), h: E(253746), fontSize: 12 });
     slide.addImage({ data: logo, x: E(8712403), y: E(4673498), w: E(557601), h: E(124358), rotate: 270 });
 
-    if (!photos.length) {
-      const x = GRID[0].x, y = GRID[0].y;
-      const w = GRID[1].x + PHOTO_W - x - 0.2, h = GRID[2].y + PHOTO_H - y;  // deja libre el logo
-      slide.addShape('rect', { x, y, w, h, fill: { color: 'ECECEC' }, line: { color: 'C8C8C8', dashType: 'dash', width: 1 } });
-      slide.addText('Pendiente', { x, y, w, h, align: 'center', valign: 'middle', fontSize: 20, color: '7A7A7A', fontFace: FONT, isTextBox: true });
-    }
-    const boxes = photoLayout(photos.length);
+    // El recuadro de estatus ocupa el lugar de una foto (va al final).
+    const boxes = photoLayout(photos.length + (status ? 1 : 0));
     for (let i = 0; i < photos.length; i++) {
       const data = await photo4x3(await readEntry(opts.zip, opts.entryByName.get(photos[i].member)));
       const b = boxes[i];
       slide.addImage({ data, x: b.x, y: b.y, w: b.w, h: b.h });
     }
+    if (status) addStatusCard(slide, boxes[photos.length], status);
     opts.onProgress?.(++done, opts.sites.length);
   }
   const buffer = await pptx.write({ outputType: 'arraybuffer' });

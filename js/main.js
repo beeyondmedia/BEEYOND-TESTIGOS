@@ -1,8 +1,8 @@
 import { FIREBASE_CONFIG, DOMINIO, ADMIN_PRINCIPAL } from './config.js';
-import { recordsFromSheets, indexArchive, reconcile, exportList, ledgerToList, ledgerFromList, mappingsFromList, suffix } from './core.js';
+import { recordsFromSheets, indexArchive, reconcile, exportList, ledgerToList, ledgerFromList, mappingsFromList, suffix, siteStatus } from './core.js';
 import { openZip, readEntry, buildZip } from './zip.js';
 import { readXlsx } from './xlsx.js';
-import { buildPpt, slideTexts, photoLayout } from './ppt.js';
+import { buildPpt, slideTexts, photoLayout, slideContent, STATUS_COLORS } from './ppt.js';
 import { analyzePpt, matchSites, pptStatus, planUpdate, updatePpt } from './pptmerge.js';
 
 const $ = id => document.getElementById(id);
@@ -212,6 +212,7 @@ const FILTERS = [
   ['con', 'Con fotos', s => s.photos.length > 0],
   ['sin', 'Pendientes (sin fotos)', s => !s.photos.length],
   ['elegir', 'Con fotos sin elegir', s => s.photos.length > 0 && !(state.selected.get(s.title) || []).length],
+  ['coment', 'Con comentarios del reporte', s => ['Con observaciones', 'En revisión'].includes(siteStatus(s)?.estatus)],
   ['ppt', 'Por agregar o completar en PPT', s => ['falta', 'completar'].includes(pptStatus(s, state.pptMatch.get(s.title)))],
 ];
 const activeFilters = () => FILTERS.filter(([id]) => id !== 'ppt' || state.ppt);
@@ -243,6 +244,7 @@ function drawSites(jump = false) {
     const picked = (state.selected.get(site.title) || []).length;
     tags.append(site.photos.length ? node('span', plural(site.photos.length, 'foto', 'fotos'), 'pill p-ok') : node('span', 'Sin fotos', 'pill p-idle'));
     if (picked) tags.append(node('span', plural(picked, 'elegida', 'elegidas'), 'pill p-new'));
+    const stt = siteStatus(site); if (stt && stt.estatus !== 'Pendiente') { const pl = node('span', stt.estatus, 'pill ' + STATUS_PILL[stt.estatus]); pl.title = stt.comentario; tags.append(pl); }
     if (state.ppt) { const [t, cls] = PPT_PILL[pptStatus(site, state.pptMatch.get(site.title))]; tags.append(node('span', t, 'pill ' + cls)); }
     button.append(tags);
     button.className = index === state.current ? 'active' : '';
@@ -252,10 +254,6 @@ function drawSites(jump = false) {
   if (!list.length) target.append(node('div', 'Ninguna ubicación con este filtro.', 'empty'));
 }
 
-function chosenFor(site) {
-  const picked = state.selected.get(site.title) || [];
-  return picked.length ? picked : site.photos.slice(0, Number($('layout').value)).map(p => p.code);
-}
 
 function drawSlide() {
   const site = state.result.sites[state.current]; if (!site) return;
@@ -263,16 +261,20 @@ function drawSlide() {
   $('slide-campaign').textContent = $('ppt-title').value.trim() || defaultTitle();
   $('slide-location').textContent = t.location; $('slide-format').textContent = t.format; $('slide-city').textContent = t.city;
   const grid = $('slide-grid'); grid.replaceChildren();
-  const codes = chosenFor(site).slice(0, 4);
-  if (!codes.length) { grid.append(node('div', 'Pendiente', 'slot pend')); return; }
-  const photos = codes.map(c => site.photos.find(p => p.code === c)).filter(Boolean);
-  photoLayout(photos.length).forEach((b, i) => {
-    const slot = node('div', undefined, 'slot');
-    Object.assign(slot.style, { left: b.x / 10 * 100 + '%', top: b.y / 5.625 * 100 + '%', width: b.w / 10 * 100 + '%', height: b.h / 5.625 * 100 + '%' });
-    slot.append(picture(photos[i]));
-    grid.append(slot);
-  });
+  const { photos, status } = slideContent(site, state.selected.get(site.title), Number($('layout').value));
+  const place = (slot, b) => Object.assign(slot.style, { left: b.x / 10 * 100 + '%', top: b.y / 5.625 * 100 + '%', width: b.w / 10 * 100 + '%', height: b.h / 5.625 * 100 + '%' });
+  const boxes = photoLayout(photos.length + (status ? 1 : 0));
+  photos.forEach((photo, i) => { const slot = node('div', undefined, 'slot'); place(slot, boxes[i]); slot.append(picture(photo)); grid.append(slot); });
+  if (status) {
+    const card = node('div', undefined, 'slot card'); place(card, boxes[photos.length]);
+    card.style.borderColor = '#' + STATUS_COLORS[status.estatus];
+    const h = node('b', status.estatus.toUpperCase()); h.style.color = '#' + STATUS_COLORS[status.estatus];
+    card.append(h, node('span', status.comentario)); grid.append(card);
+  }
 }
+
+const STATUS_PILL = { 'Con observaciones': 'p-bad', 'En revisión': 'p-warn', 'Pendiente': 'p-idle' };
+const maxPhotos = site => Number($('layout').value) - (siteStatus(site) && site.photos.length ? 1 : 0);
 
 function drawEditor() {
   const site = state.result.sites[state.current];
@@ -281,6 +283,9 @@ function drawEditor() {
   $('site-name').textContent = site.title;
   const st = state.ppt ? ' · ' + PPT_PILL[pptStatus(site, state.pptMatch.get(site.title))][0] : '';
   $('site-sub').textContent = [site.location, site.provider, site.city].filter(Boolean).join(' · ') + st;
+  const stt = siteStatus(site);
+  $('site-status').hidden = !stt || stt.estatus === 'Pendiente';
+  if (stt) $('site-status').textContent = `Reporte: ${stt.estatus} — ${stt.comentario}. Va en la diapositiva en un recuadro y la app de Comprobación lo registra como estatus y comentario.`;
   const codes = state.selected.get(site.title) || [];
   for (const photo of site.photos) {
     const card = node('div', undefined, 'photo' + (codes.includes(photo.code) ? ' on' : ''));
@@ -290,7 +295,7 @@ function drawEditor() {
     checkbox.onchange = () => {
       let picked = state.selected.get(site.title) || [];
       if (checkbox.checked) {
-        if (picked.length >= Number($('layout').value)) { checkbox.checked = false; message('Elige como máximo ' + $('layout').value + ' fotos por diapositiva.', 'warn'); return; }
+        if (picked.length >= maxPhotos(site)) { checkbox.checked = false; message(`Elige como máximo ${maxPhotos(site)} fotos para esta diapositiva` + (maxPhotos(site) < Number($('layout').value) ? ' (el comentario del reporte ocupa un lugar).' : '.'), 'warn'); return; }
         picked = [...picked, photo.code];
       } else picked = picked.filter(c => c !== photo.code);
       state.selected.set(site.title, picked);

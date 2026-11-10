@@ -85,3 +85,27 @@ print(json.dumps({n: z.read(n).decode() for n in z.namelist()}))`, out]).toStrin
   assert.equal(files[TITLE + '_02.png'], 'png-bytes');
   assert.equal(files[TITLE + '_01.jpg'], 'original-image-bytes'.repeat(50));
 });
+
+import { classifyComment, siteStatus } from '../js/core.js';
+test('clasifica los comentarios del reporte de monitoreo', () => {
+  assert.equal(classifyComment('sin problemas'), null);
+  assert.equal(classifyComment('arte no colocado'), 'Con observaciones');
+  assert.equal(classifyComment('esta version no se exhibio'), 'Con observaciones');
+  assert.equal(classifyComment('Esta versión NO se exhibió'), 'Con observaciones');
+  assert.equal(classifyComment('la pantalla tiene algunos leds dañados'), 'En revisión');
+  assert.equal(classifyComment('No enciende la pantalla'), 'En revisión');
+  assert.equal(classifyComment('La pantalla no enciende correctamente'), 'En revisión');
+  assert.equal(classifyComment('vidrio roto'), 'En revisión');
+  assert.equal(classifyComment('en vista natural arte no colocado y en vista cruzada no enciende la pantalla'), 'Con observaciones');
+});
+test('estatus por ubicación', () => {
+  const p = [{ code: 'A1' }];
+  assert.deepEqual(siteStatus({ photos: [], notes: [] }), { estatus: 'Pendiente', comentario: 'Sin registro fotográfico' });
+  assert.equal(siteStatus({ photos: p, notes: [{ version: 'V1', text: 'sin problemas' }] }), null);
+  assert.deepEqual(siteStatus({ photos: p, notes: [{ version: '24 MSI', text: 'sin problemas' }, { version: 'PROMOS', text: 'arte no colocado' }] }),
+    { estatus: 'Con observaciones', comentario: 'PROMOS: arte no colocado' });
+  assert.deepEqual(siteStatus({ photos: p, notes: [{ version: 'V', text: 'No enciende la pantalla' }, { version: 'V', text: 'no enciende la pantalla' }] }),
+    { estatus: 'En revisión', comentario: 'No enciende la pantalla' });
+  assert.deepEqual(siteStatus({ photos: p, notes: [{ version: '24 MSI', text: 'leds dañados' }, { version: 'PROMOS', text: 'leds dañados' }] }),
+    { estatus: 'En revisión', comentario: 'leds dañados' });
+});

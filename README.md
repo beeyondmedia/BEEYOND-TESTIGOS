@@ -68,6 +68,10 @@ Entra quien tenga cuenta de Google **verificada @beeyondmedia.com** y además **
 4. **Entregar.**
    - **Actualizar PPT cargada:** conserva la presentación tal cual y solo agrega, en el orden del plan, las ubicaciones que le faltan, y reemplaza las diapositivas que estaban como *Pendiente* (sin fotos) cuando ya hay fotos. Las diapositivas se reconocen por el número del Nombre Crudos (`29. TAMARINDOS` ↔ `29. CDMX_LANDMARK_Tamarindos`). No carga la presentación completa en memoria: copia tal cual todo lo que no cambia.
    - **Acomodo de fotos** (igual en PPT nueva y al actualizar): 1 foto = grande al centro · 2 = una arriba de otra, centradas · 3 = dos arriba y una centrada abajo · 4 = cuadrícula 2 × 2.
+   - **Estatus del reporte de monitoreo:** la columna *Estatus* se clasifica por ubicación y va en la diapositiva en un recuadro (nombre `BT-ESTATUS`) que ocupa el lugar de una foto; la app de Comprobación lo lee y guarda el estatus y el comentario.
+     - *Con observaciones:* "arte no colocado", "esta versión no se exhibió" (también si viene junto con otro problema).
+     - *En revisión:* "leds dañados", "no enciende", y cualquier otro comentario (vidrio roto, zona de obras…).
+     - *Pendiente:* sin fotos ni comentario. "sin problemas" no lleva recuadro.
    - **PPT completa nueva:** una diapositiva por ubicación del plan con el diseño de las presentaciones de Beeyond (tomado de *MP BUEN FIN PREVIA*). El tipo de medio sale de una columna Formato/Tipo de medio del plan o, si no existe, del Nombre Crudos (`N. CIUDAD_TIPO_Nombre`). Gráficos de la plantilla en `assets/ppt/`.
    - **ZIP de fotos renombradas:** todas las fotos vinculadas, no solo las elegidas.
 

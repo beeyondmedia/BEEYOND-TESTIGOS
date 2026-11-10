@@ -77,7 +77,7 @@ export function reconcile(report, plan, archives, mappings = {}, ledgerIn = {}) 
     if (!title) continue;
     if (byTitle.has(title)) throw new Error('Nombre Crudos repetido en el plan: ' + title);
     const format = row.VENUETYPE || row.TIPODEMEDIO || row.TIPODESOPORTE || row.TIPODEUBICACION || row.FORMATO || row.TIPO || '';
-    const site = { title, location: row.UBICACION ?? '', provider: row.MEDIAOWNER ?? '', city: row.CIUDAD ?? '', format, photos: [] };
+    const site = { title, location: row.UBICACION ?? '', provider: row.MEDIAOWNER ?? '', city: row.CIUDAD ?? '', format, photos: [], notes: [] };
     sites.push(site); byTitle.set(title, site);
   }
   const ledger = { ...ledgerIn };
@@ -103,6 +103,7 @@ export function reconcile(report, plan, archives, mappings = {}, ledgerIn = {}) 
       continue;
     }
     const site = byTitle.get(title);
+    site.notes.push({ version: String(row.CAMPANA ?? '').trim(), text: String(row.ESTATUS ?? '').trim() });
     for (const code of codes) {
       if (!archives.has(code)) continue;
       if (owners.has(code) && owners.get(code) !== title) { conflicts.push(code); continue; }
@@ -154,3 +155,37 @@ export const ledgerToList = ledger => Object.entries(ledger).map(([k, v]) => {
 });
 export const ledgerFromList = list => Object.fromEntries((list || []).map(x => [x.title + '\t' + x.code, { number: x.number, filename: x.filename }]));
 export const mappingsFromList = list => Object.fromEntries((list || []).map(x => [x.key, x.title]));
+
+// ---------------------------------------------------------------- estatus del reporte (columna Estatus)
+// Se usa para el recuadro de la diapositiva que luego lee la app de Comprobación.
+const fold = t => String(t ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+const SIN_PROBLEMA = /^(sin problemas?|sin observaciones|sin comentarios?|ok|correct[oa]|aprobad[oa]|exhibid[oa]|bien|-|n\/?a)$/;
+const OBSERVACION = /arte\s*no\s*colocad|no\s*se\s*exhib|no\s*exhibid|version\s*no/;
+
+// "arte no colocado" -> Con observaciones · "leds dañados", "no enciende"… -> En revisión.
+// Cualquier otro comentario -> En revisión (para que alguien lo revise). "sin problemas" -> null.
+export function classifyComment(text) {
+  const t = fold(text);
+  if (!t || SIN_PROBLEMA.test(t)) return null;
+  return OBSERVACION.test(t) ? 'Con observaciones' : 'En revisión';
+}
+
+// Estatus de la ubicación para la diapositiva: { estatus, comentario } o null si no lleva recuadro.
+// Sin fotos ni comentario -> Pendiente. Con un comentario de observación en cualquiera de sus renglones,
+// gana "Con observaciones"; si solo hay de revisión, "En revisión".
+export function siteStatus(site) {
+  const notes = (site.notes || []).filter(n => classifyComment(n.text));
+  if (!notes.length) return site.photos.length ? null : { estatus: 'Pendiente', comentario: 'Sin registro fotográfico' };
+  const estatus = notes.some(n => classifyComment(n.text) === 'Con observaciones') ? 'Con observaciones' : 'En revisión';
+  // Mismo comentario en todas las versiones -> una vez; si solo aplica a algunas, se dice a cuáles.
+  const all = new Set((site.notes || []).map(n => n.version).filter(Boolean));
+  const byText = new Map();
+  for (const n of notes) {
+    const k = fold(n.text);
+    if (!byText.has(k)) byText.set(k, { text: n.text, versions: new Set() });
+    if (n.version) byText.get(k).versions.add(n.version);
+  }
+  const parts = [...byText.values()].map(({ text, versions }) =>
+    all.size > 1 && versions.size && versions.size < all.size ? [...versions].join(', ') + ': ' + text : text);
+  return { estatus, comentario: parts.join(' · ') };
+}
