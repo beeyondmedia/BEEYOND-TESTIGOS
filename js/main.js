@@ -364,9 +364,9 @@ function drawDelivery() {
   const add = actions.filter(a => a.type === 'add').length, rep = actions.filter(a => a.type === 'replace').length, fill = actions.filter(a => a.type === 'fill').length;
   const pend = state.result.sites.filter(s => pptStatus(s, state.pptMatch.get(s.title)) === 'pendiente').length;
   setMsg(box, `PPT cargada: ${state.ppt.name} (${plural(state.ppt.slides.length, 'diapositiva', 'diapositivas')}).\n` +
-    (actions.length ? 'Al actualizar: ' + [add && `se agregarán ${plural(add, 'ubicación que falta', 'ubicaciones que faltan')}`, rep && `se completarán ${plural(rep, 'pendiente', 'pendientes')} con fotos nuevas`, fill && `se agregarán las fotos elegidas a ${plural(fill, 'diapositiva incompleta', 'diapositivas incompletas')} (en la misma diapositiva)`].filter(Boolean).join(', ') + '. Lo demás queda igual.' : 'La PPT ya tiene todas las ubicaciones; no hay nada por agregar ni completar.') +
+    (actions.length ? 'Al actualizar: ' + [add && `se agregarán ${plural(add, 'ubicación que falta', 'ubicaciones que faltan')}`, rep && `${rep === 1 ? 'se completará 1 pendiente' : `se completarán ${rep} pendientes`} con fotos nuevas`, fill && `se agregarán las fotos elegidas a ${plural(fill, 'diapositiva incompleta', 'diapositivas incompletas')} (en la misma diapositiva)`].filter(Boolean).join(', ') + '. Lo demás queda igual.' : 'La PPT ya tiene todas las ubicaciones; no hay nada por agregar ni completar.') +
     (pend ? ` ${plural(pend, 'ubicación sigue', 'ubicaciones siguen')} como Pendiente porque no tienen fotos en este lote.` : '') +
-    (incompletas.length ? `\n${plural(incompletas.length, 'diapositiva incompleta', 'diapositivas incompletas')} sin fotos elegidas: se quedan igual. Para completarlas, usa el filtro "Incompletas en PPT" del paso 3 y elige las fotos que faltan.` : ''),
+    (incompletas.length ? `\n${plural(incompletas.length, 'diapositiva incompleta', 'diapositivas incompletas')} sin fotos elegidas: ${incompletas.length === 1 ? 'se queda' : 'se quedan'} igual. Para completarlas, usa el filtro "Incompletas en PPT" del paso 3 y elige las fotos que faltan.` : ''),
   actions.length ? 'warn' : 'ok');
   $('update-ppt').disabled = !actions.length;
   $('update-ppt').textContent = actions.length ? `Actualizar PPT cargada (${plural(actions.length, 'cambio', 'cambios')})` : 'Actualizar PPT cargada';
