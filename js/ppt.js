@@ -2,8 +2,8 @@
 // con el diseño de las presentaciones de Beeyond (ej. "MP BUEN FIN PREVIA"):
 // panel coral a la izquierda con título, ubicación, tipo de medio y ciudad; 4 fotos en cuadrícula.
 // Una diapositiva por ubicación del plan, en el orden del plan.
-import { readEntry, openZip, buildZip } from './zip.js';
-import { siteStatus } from './core.js';
+import { readEntry, openZip, buildZip, newEntry } from './zip.js';
+import { siteStatus, safeName } from './core.js';
 
 const E = v => v / 914400;          // EMU -> pulgadas (medidas tomadas de la plantilla)
 const FONT = 'Rubik';
@@ -106,37 +106,46 @@ function addStatusCard(slide, b, { estatus, comentario }) {
 /**
  * opts: { title, fileName, sites, selected: Map title->codes, perSlide, zip, entryByName, onProgress }
  */
-export async function renderPpt(opts) {
-  await loadLib();
-  const [panel, header, headerIcon, corner, pin, logo] = await Promise.all(
-    ['panel.png', 'header.png', 'header-icon.png', 'corner.png', 'pin.png', 'logo.png'].map(asset));
+const ASSETS = ['panel.png', 'header.png', 'header-icon.png', 'corner.png', 'pin.png', 'logo.png'];
+const loadAssets = async () => Object.fromEntries((await Promise.all(ASSETS.map(asset))).map((d, i) => [ASSETS[i], d]));
+function newDeck(title) {
   const pptx = new window.PptxGenJS();
   pptx.layout = 'LAYOUT_16x9';      // 10 x 5.625 in, igual que la plantilla
-  pptx.title = opts.title;
+  pptx.title = title;
   pptx.company = 'Beeyond Media';
-  const white = { color: 'FFFFFF', fontFace: FONT, margin: 0, valign: 'top', align: 'left', isTextBox: true };
+  return pptx;
+}
 
+// Marco de la diapositiva: panel coral con título, ubicación, tipo de medio, ciudad y logo.
+function drawFrame(slide, site, title, A) {
+  const white = { color: 'FFFFFF', fontFace: FONT, margin: 0, valign: 'top', align: 'left', isTextBox: true };
+  const t = slideTexts(site);
+  slide.background = { color: 'F6F6F6' };
+  slide.addImage({ data: A['panel.png'], x: 0, y: E(7315), w: E(3334500), h: E(5151730) });
+  slide.addImage({ data: A['header.png'], x: 0, y: E(300838), w: E(2999964), h: E(1176010) });
+  slide.addImage({ data: A['header-icon.png'], x: E(310896), y: E(533644), w: E(246065), h: E(246065) });
+  slide.addText(title, { ...white, x: E(433791), y: E(592440), w: E(2565989), h: E(677113), fontSize: 16 });
+  slide.addImage({ data: A['corner.png'], x: E(2608143), y: E(1112002), w: E(441564), h: E(441564), rotate: 90 });
+  slide.addImage({ data: A['pin.png'], x: E(248351), y: E(2212848), w: E(246065), h: E(246065) });
+  slide.addText([
+    { text: t.location, options: { breakLine: true } },
+    { text: '', options: { breakLine: true } },
+    { text: ' ' + t.format + ' ' },
+  ], { ...white, x: E(566928), y: E(2212848), w: E(2788920), h: E(992490), fontSize: 12 });
+  slide.addText(t.city, { ...white, x: E(145390), y: E(4550969), w: E(2854482), h: E(253746), fontSize: 12 });
+  slide.addImage({ data: A['logo.png'], x: E(8712403), y: E(4673498), w: E(557601), h: E(124358), rotate: 270 });
+}
+
+export async function renderPpt(opts) {
+  await loadLib();
+  const A = await loadAssets();
+  const pptx = newDeck(opts.title);
   let done = 0, withPhotos = 0;
   for (const site of opts.sites) {
     const { photos, status } = slideContent(site, opts.selected.get(site.title), opts.perSlide);
     if (photos.length) withPhotos++;
-    const t = slideTexts(site);
-
     const slide = pptx.addSlide();
-    slide.background = { color: 'F6F6F6' };
-    slide.addImage({ data: panel, x: 0, y: E(7315), w: E(3334500), h: E(5151730) });
-    slide.addImage({ data: header, x: 0, y: E(300838), w: E(2999964), h: E(1176010) });
-    slide.addImage({ data: headerIcon, x: E(310896), y: E(533644), w: E(246065), h: E(246065) });
-    slide.addText(opts.title, { ...white, x: E(433791), y: E(592440), w: E(2565989), h: E(677113), fontSize: 16 });
-    slide.addImage({ data: corner, x: E(2608143), y: E(1112002), w: E(441564), h: E(441564), rotate: 90 });
-    slide.addImage({ data: pin, x: E(248351), y: E(2212848), w: E(246065), h: E(246065) });
-    slide.addText([
-      { text: t.location, options: { breakLine: true } },
-      { text: '', options: { breakLine: true } },
-      { text: ' ' + t.format + ' ' },
-    ], { ...white, x: E(566928), y: E(2212848), w: E(2788920), h: E(992490), fontSize: 12 });
-    slide.addText(t.city, { ...white, x: E(145390), y: E(4550969), w: E(2854482), h: E(253746), fontSize: 12 });
-    slide.addImage({ data: logo, x: E(8712403), y: E(4673498), w: E(557601), h: E(124358), rotate: 270 });
+    drawFrame(slide, site, opts.title, A);
 
     // El recuadro de estatus ocupa el lugar de una foto (va al final).
     const boxes = photoLayout(photos.length + (status ? 1 : 0));
@@ -171,3 +180,63 @@ export async function buildPpt(opts) {
   download(new Blob([clean], { type: PPTX_TYPE }), opts.fileName);
   return out;
 }
+
+// ---------------------------------------------------------------- PPT en blanco (solo con el plan)
+// Una diapositiva por ubicación con el marco de Beeyond y N marcadores de imagen de PowerPoint
+// (ícono para insertar la foto con un clic; se ajusta sola al espacio). Cada marcador se llama
+// como el archivo esperado (Nombre Crudos_01, _02…) en el panel de selección.
+export async function buildBlankPpt({ title, sites, slots, fileName, onProgress }) {
+  await loadLib();
+  const A = await loadAssets();
+  const pptx = newDeck(title);
+  const boxes = photoLayout(slots);
+  pptx.defineSlideMaster({
+    title: 'BT_FOTOS', background: { color: 'F6F6F6' },
+    objects: boxes.map((b, i) => ({ placeholder: { options: { name: 'foto' + (i + 1), type: 'body', x: b.x, y: b.y, w: b.w, h: b.h }, text: 'Foto ' + (i + 1) } })),
+  });
+  sites.forEach((site, i) => { drawFrame(pptx.addSlide({ masterName: 'BT_FOTOS' }), site, title, A); onProgress?.(i + 1, sites.length); });
+  const g = await openZip(new Blob([await pptx.write({ outputType: 'arraybuffer' })]));
+  const text = async e => (await readEntry(g, e)).text();
+  const items = [];
+  let layoutPath = '', idxs = [];
+  for (const e of g.entries) {
+    if (!/^ppt\/slideLayouts\/slideLayout\d+\.xml$/.test(e.name)) continue;
+    const xml = await text(e);
+    if (!xml.includes('<p:cSld name="BT_FOTOS">')) continue;
+    layoutPath = e.name;
+    idxs = [...xml.matchAll(/<p:ph\s+idx="(\d+)"/g)].map(m => m[1]);
+  }
+  if (!layoutPath || idxs.length !== slots) throw new Error('No se pudo armar el diseño de la PPT en blanco.');
+  const layoutName = layoutPath.split('/').pop();
+  for (const e of g.entries) {
+    if (e.dir) continue;
+    if (e.name === layoutPath) {
+      // Marcadores de imagen: tipo "pic", fondo gris claro y texto centrado.
+      let xml = await text(e);
+      xml = xml.replace(/<p:ph\s+idx="(\d+)"\s+hasCustomPrompt="1"\s*\/>/g, '<p:ph type="pic" idx="$1" hasCustomPrompt="1"/>')
+        .replace(/<a:noFill\/><a:ln><\/a:ln><\/p:spPr><p:txBody><a:bodyPr wrap="square" rtlCol="0">/g,
+          '<a:solidFill><a:srgbClr val="E6E6E6"/></a:solidFill><a:ln><a:noFill/></a:ln></p:spPr><p:txBody><a:bodyPr wrap="square" rtlCol="0" anchor="ctr">')
+        .replace(/<a:lvl1pPr indent="0" marL="0">/g, '<a:lvl1pPr indent="0" marL="0" algn="ctr">');
+      items.push(newEntry(e.name, xml));
+      continue;
+    }
+    const m = e.name.match(/^ppt\/slides\/slide(\d+)\.xml$/);
+    if (m) {
+      const relsE = g.entries.find(x => x.name === `ppt/slides/_rels/slide${m[1]}.xml.rels`);
+      if (relsE && (await text(relsE)).includes(layoutName)) {
+        const site = sites[+m[1] - 1];
+        const base = safeName(site.title);
+        const ph = idxs.map((idx, k) => `<p:sp><p:nvSpPr><p:cNvPr id="${900 + k}" name="${xmlEsc(base + '_' + String(k + 1).padStart(2, '0'))}"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="pic" idx="${idx}"/></p:nvPr></p:nvSpPr><p:spPr/></p:sp>`).join('');
+        // Quita los cuadros de texto que PptxGenJS copia del diseño y pone los marcadores de imagen.
+        const xml = (await text(e)).replace(/<p:sp>(?:(?!<\/p:sp>)[\s\S])*?<p:ph\b[\s\S]*?<\/p:sp>/g, '');
+        items.push(newEntry(e.name, xml.replace('</p:spTree>', ph + '</p:spTree>')));
+        continue;
+      }
+    }
+    items.push({ name: e.name, zip: g, entry: e });
+  }
+  items.sort((x, y) => (y.name === '[Content_Types].xml') - (x.name === '[Content_Types].xml'));
+  download(new Blob([await buildZip(items)], { type: PPTX_TYPE }), fileName);
+  return { slides: sites.length };
+}
+const xmlEsc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

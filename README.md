@@ -63,6 +63,7 @@ Entra quien tenga cuenta de Google **verificada @beeyondmedia.com** y además **
 ## Uso
 
 1. **Archivos del lote.** Escribe o elige el identificador de campaña (minúsculas, números y guiones; ej. `mercado-pago-buen-fin-2026`) y elige el **plan XLSX**, el **reporte de Media Nitro XLSX** y el **ZIP original de fotos**. Opcional: la **PPT ya hecha** de esa campaña. Presiona **Revisar**.
+   - **¿Solo tienes el plan?** En *¿Solo tienes el plan? Genera la PPT con los espacios de fotos vacíos* eliges el título y cuántos espacios por diapositiva (1–4). Sale una diapositiva por ubicación del plan con el diseño de Beeyond y marcadores de imagen de PowerPoint (clic en el ícono para insertar la foto; se ajusta sola). Cada marcador se llama como el archivo esperado (`Nombre Crudos_01`…). Las fotos insertadas así las cuentan esta app (al actualizar) y la de Comprobación.
 2. **Confirmar ubicaciones.** Elige el Nombre Crudos de las direcciones que no coincidieron solas. Queda guardado para toda la campaña.
 3. **Elegir fotos.** Filtros: *Todas*, *Con fotos*, *Pendientes (sin fotos)*, *Con fotos sin elegir* y, si cargaste una PPT, *Por agregar o completar en PPT*. Elige hasta 4 fotos por ubicación y presiona **Guardar selección**. Si no eliges, se usan las primeras vinculadas.
 4. **Entregar.**

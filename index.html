@@ -81,6 +81,17 @@
           <button id="load" type="button" class="btn primary">Revisar</button>
           <span class="note">Si cargas una PPT ya hecha, la app solo agrega las ubicaciones que le faltan y completa las que quedaron como <em>Pendiente</em>.</span>
         </div>
+        <details class="sec" id="blank-box">
+          <summary>¿Solo tienes el plan? Genera la PPT con los espacios de fotos vacíos</summary>
+          <div class="in stack">
+            <p class="note">Elige solo el <b>plan</b> arriba. Sale una diapositiva por ubicación, con el diseño de Beeyond y los datos del plan, y con espacios para fotos donde las insertas con un clic en el ícono (PowerPoint las acomoda solas). Cada espacio lleva el nombre del archivo que le toca (Nombre Crudos_01, _02…). No necesita el reporte ni el ZIP.</p>
+            <div class="row">
+              <label class="field grow"><span>Título de la presentación</span><input id="blank-title" type="text" placeholder="Ej. MERCADO LIBRE BUEN FIN PREVIA"></label>
+              <label class="field"><span>Espacios por diapositiva</span><select id="blank-slots"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></label>
+              <button id="blank-ppt" type="button" class="btn primary">Generar PPT en blanco</button>
+            </div>
+          </div>
+        </details>
         <div id="message" class="msg" role="status" aria-live="polite" hidden></div>
       </section>
 

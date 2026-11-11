@@ -2,7 +2,7 @@ import { FIREBASE_CONFIG, DOMINIO, ADMIN_PRINCIPAL } from './config.js';
 import { recordsFromSheets, indexArchive, reconcile, exportList, ledgerToList, ledgerFromList, mappingsFromList, suffix, siteStatus } from './core.js';
 import { openZip, readEntry, buildZip } from './zip.js';
 import { readXlsx } from './xlsx.js';
-import { buildPpt, slideTexts, photoLayout, slideContent, STATUS_COLORS } from './ppt.js';
+import { buildPpt, buildBlankPpt, slideTexts, photoLayout, slideContent, STATUS_COLORS } from './ppt.js';
 import { analyzePpt, matchSites, pptStatus, planUpdate, updatePpt } from './pptmerge.js';
 
 const $ = id => document.getElementById(id);
@@ -391,6 +391,25 @@ async function exportPpt() {
   finally { button.disabled = false; }
 }
 
+// PPT en blanco: solo con el plan, sin reporte ni fotos.
+async function exportBlank() {
+  const button = $('blank-ppt'); button.disabled = true;
+  try {
+    if (!state.files.plan) throw Error('Elige primero el plan de campaña (XLSX).');
+    const plan = await parse('plan', state.files.plan);
+    const { sites } = reconcile([], plan, new Map());
+    if (!sites.length) throw Error('El plan no tiene ubicaciones con Nombre Crudos.');
+    const title = $('blank-title').value.trim() || defaultTitle();
+    $('blank-title').value = title;
+    try { localStorage.setItem(titleKey(cid()), title); } catch { /* sin almacenamiento */ }
+    const slots = Number($('blank-slots').value);
+    message('Armando PPT en blanco…');
+    await buildBlankPpt({ title, sites, slots, fileName: safeFile(title) + ' (en blanco).pptx', onProgress: (n, t) => message(`Armando diapositivas… ${n} de ${t}`) });
+    message(`PPT en blanco lista: ${plural(sites.length, 'diapositiva', 'diapositivas')} con ${plural(slots, 'espacio', 'espacios')} para fotos (plan: hoja ${state.sheets.plan}). En PowerPoint, haz clic en el ícono de imagen de cada espacio para insertar la foto.`, 'ok');
+  } catch (e) { console.error(e); message(explain(e), 'err'); }
+  finally { button.disabled = false; }
+}
+
 async function exportUpdate() {
   const button = $('update-ppt'); button.disabled = true;
   try {
@@ -497,6 +516,8 @@ async function start() {
   $('export').onclick = exportZip;
   $('export-ppt').onclick = exportPpt;
   $('update-ppt').onclick = exportUpdate;
+  $('blank-ppt').onclick = exportBlank;
+  $('blank-box').ontoggle = () => { if ($('blank-box').open && !$('blank-title').value) { try { $('blank-title').value = defaultTitle(); } catch { /* sin campaña */ } } };
   $('site-filter').oninput = () => state.result && drawSites(true);
   $('ppt-title').oninput = () => state.result && drawSlide();
   $('layout').onchange = () => {
