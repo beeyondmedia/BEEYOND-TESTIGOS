@@ -142,19 +142,28 @@ export async function renderPpt(opts) {
   const pptx = newDeck(opts.title);
   let done = 0, withPhotos = 0;
   for (const site of opts.sites) {
-    const { photos, status } = slideContent(site, opts.selected.get(site.title), opts.perSlide);
-    if (photos.length) withPhotos++;
+    // Diapositiva incompleta de una PPT ya hecha: sus fotos actuales primero y luego las elegidas.
+    const existing = site._existing || [];
+    let { photos, status } = site._existing
+      ? { photos: site._fillCodes.map(c => site.photos.find(p => p.code === c)), status: siteStatus(site) }
+      : slideContent(site, opts.selected.get(site.title), opts.perSlide);
+    if (existing.length + photos.length + (status ? 1 : 0) > 4) status = null;
+    const items = [...existing.map(blob => ({ blob })), ...photos];
+    if (items.length) withPhotos++;
     const slide = pptx.addSlide();
     drawFrame(slide, site, opts.title, A);
 
     // El recuadro de estatus ocupa el lugar de una foto (va al final).
-    const boxes = photoLayout(photos.length + (status ? 1 : 0));
-    for (let i = 0; i < photos.length; i++) {
-      const data = await photo4x3(await readEntry(opts.zip, opts.entryByName.get(photos[i].member)));
+    const boxes = photoLayout(items.length + (status ? 1 : 0));
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      let data;
+      try { data = await photo4x3(it.blob || await readEntry(opts.zip, opts.entryByName.get(it.member))); }
+      catch (e) { if (it.blob) throw new Error(`No pude leer una de las fotos que ya tiene tu PPT en la diapositiva de ${site.title}. Complétala a mano o quita esa selección.`); throw e; }
       const b = boxes[i];
       slide.addImage({ data, x: b.x, y: b.y, w: b.w, h: b.h });
     }
-    if (status) addStatusCard(slide, boxes[photos.length], status);
+    if (status) addStatusCard(slide, boxes[items.length], status);
     opts.onProgress?.(++done, opts.sites.length);
   }
   const buffer = await pptx.write({ outputType: 'arraybuffer' });

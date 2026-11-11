@@ -42,15 +42,20 @@ export async function analyzePpt(file) {
     const relsPath = path.replace(/([^/]+)$/, '_rels/$1.rels');
     const xml = await text(path);
     const srels = rels(await text(relsPath));
-    let photos = 0;
+    const relTarget = new Map(srels.map(r => [r.id, r.target]));
+    const photoPics = [];   // fotos de la diapositiva, en orden de lectura (para completarla sin perderlas)
     for (const p of xml.matchAll(/<p:pic>[\s\S]*?<\/p:pic>/g)) {
       const g = xfrm(p[0]);
+      const rid = attr(p[0].match(/<a:blip\b[^>]*>/)?.[0] || '', 'r:embed');
+      const media = rid && relTarget.get(rid) ? resolve(path, relTarget.get(rid)) : '';
       // Foto en marcador de imagen sin posición propia (hereda la del diseño): cuenta como foto.
-      if (!g) { if (/<p:ph\b/.test(p[0]) && /<a:blip\b/.test(p[0])) photos++; continue; }
+      if (!g) { if (/<p:ph\b/.test(p[0]) && media) photoPics.push({ media, x: 0, y: 1e12 + photoPics.length }); continue; }
       const a = g.cx * g.cy, cx = g.x + g.cx / 2;
       // Fotos = imágenes grandes del lado derecho; panel, íconos y logo no cuentan.
-      if (a >= W * H * 0.03 && a <= W * H * 0.6 && cx >= W * 0.4) photos++;
+      if (a >= W * H * 0.03 && a <= W * H * 0.6 && cx >= W * 0.4) photoPics.push({ media, x: g.x, y: g.y });
     }
+    photoPics.sort((a, b) => (Math.abs(a.y - b.y) > 200000 ? a.y - b.y : a.x - b.x));
+    const photos = photoPics.length;
     const texts = [...xml.matchAll(/<a:p>([\s\S]*?)<\/a:p>/g)]
       .map(p => [...p[1].matchAll(/<a:t>([^<]*)<\/a:t>/g)].map(x => unxml(x[1])).join('').trim()).filter(Boolean);
     const loc = texts.find(t => /^\d+\s*\./.test(t)) || '';
@@ -58,7 +63,7 @@ export async function analyzePpt(file) {
       sldId: m[0], rid, path, relsPath, rels: srels,
       layout: srels.find(r => r.type.endsWith('/slideLayout'))?.target,
       media: srels.filter(r => r.type.endsWith('/image')).map(r => resolve(path, r.target)),
-      number: (loc.match(/^(\d+)/) || [])[1] || '', loc, photos,
+      number: (loc.match(/^(\d+)/) || [])[1] || '', loc, photos, photoPics,
       pending: photos === 0, hidden: /<p:sld\b[^>]*\bshow="0"/.test(xml),
     });
   }
@@ -82,21 +87,35 @@ export function matchSites(analysis, sites) {
 }
 
 // Estado de una ubicación respecto a la PPT cargada.
-export function pptStatus(site, slide) {
+// falta · pendiente (sin fotos y sin fotos nuevas) · completar (sin fotos, hay nuevas)
+// parcial (tiene menos fotos que "Fotos por diapositiva") · ok
+export function pptStatus(site, slide, perSlide = 0) {
   if (!slide) return 'falta';
   if (slide.pending) return site.photos.length ? 'completar' : 'pendiente';
+  if (perSlide && slide.photos < Math.min(4, perSlide)) return 'parcial';
   return 'ok';
 }
 
-export function planUpdate(analysis, sites) {
+// Fotos que se pueden agregar a una diapositiva incompleta.
+export const faltantes = (slide, perSlide) => Math.max(0, Math.min(4, perSlide) - (slide?.photos || 0));
+
+// opts: { perSlide, selected: Map título -> códigos }. Las incompletas solo se tocan si elegiste
+// fotos para ellas (la app no sabe cuáles de las fotos nuevas ya están en tu PPT).
+export function planUpdate(analysis, sites, opts = {}) {
   const match = matchSites(analysis, sites);
-  const actions = [];
+  const actions = [], incompletas = [];
   for (const site of sites) {
-    const st = pptStatus(site, match.get(site.title));
+    const slide = match.get(site.title);
+    const st = pptStatus(site, slide, opts.perSlide);
     if (st === 'falta') actions.push({ type: 'add', site });
-    if (st === 'completar') actions.push({ type: 'replace', site, slide: match.get(site.title) });
+    if (st === 'completar') actions.push({ type: 'replace', site, slide });
+    if (st === 'parcial') {
+      const valid = new Set(site.photos.map(p => p.code));
+      const codes = (opts.selected?.get(site.title) || []).filter(c => valid.has(c)).slice(0, faltantes(slide, opts.perSlide));
+      if (codes.length) actions.push({ type: 'fill', site, slide, codes }); else incompletas.push(site);
+    }
   }
-  return { match, actions };
+  return { match, actions, incompletas };
 }
 
 /**
@@ -108,10 +127,22 @@ export async function updatePpt(opts) {
   if (analysis.W !== 9144000 || analysis.H !== 5143500) {
     throw new Error('La presentación cargada no tiene el tamaño 16:9 de la plantilla (10 × 5.63 pulgadas); no se puede actualizar.');
   }
-  const { match, actions } = planUpdate(analysis, opts.sites);
+  const { match, actions } = planUpdate(analysis, opts.sites, { perSlide: opts.perSlide, selected: opts.selected });
   if (!actions.length) throw new Error('La presentación ya tiene todas las ubicaciones; no hay diapositivas por agregar ni pendientes con fotos nuevas.');
 
-  const gen = await renderPpt({ ...opts, sites: actions.map(a => a.site) });
+  // Incompletas: se rearma la misma diapositiva con sus fotos actuales + las elegidas.
+  const MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', bmp: 'image/bmp', webp: 'image/webp' };
+  const toRender = [];
+  for (const a of actions) {
+    if (a.type !== 'fill') { toRender.push(a.site); continue; }
+    const existing = [];
+    for (const p of a.slide.photoPics) {
+      const e = analysis.byName.get(p.media);
+      if (e) existing.push(await readEntry(analysis.zip, e, MIME[p.media.split('.').pop().toLowerCase()] || ''));
+    }
+    toRender.push({ ...a.site, _existing: existing, _fillCodes: a.codes });
+  }
+  const gen = await renderPpt({ ...opts, sites: toRender });
   const g = await openZip(new Blob([gen.buffer]));
   const gBy = new Map(g.entries.map(e => [e.name, e]));
   const gText = async n => (await readEntry(g, gBy.get(n))).text();
@@ -155,7 +186,7 @@ export async function updatePpt(opts) {
         out.push(`<Relationship Id="${r.id}" Type="${r.type}" Target="../media/${name}"/>`);
       }
     }
-    if (a.type === 'replace') {
+    if (a.type === 'replace' || a.type === 'fill') {
       const s = a.slide;
       // Conserva las notas de la diapositiva original.
       for (const r of s.rels) if (r.type.endsWith('/notesSlide')) out.push(`<Relationship Id="rIdBtNotes" Type="${r.type}" Target="${r.target}"/>`);
@@ -200,7 +231,7 @@ export async function updatePpt(opts) {
   items.sort((x, y) => (y.name === '[Content_Types].xml') - (x.name === '[Content_Types].xml'));
   const blob = await buildZip([...items, ...extra]);
   download(new Blob([blob], { type: PPTX_TYPE }), opts.fileName);
-  return { added: added.length, replaced: actions.length - added.length, total: order.length };
+  return { added: added.length, replaced: actions.filter(a => a.type === 'replace').length, filled: actions.filter(a => a.type === 'fill').length, total: order.length };
 }
 
 function relsDoc(list) {
