@@ -69,6 +69,43 @@ const splitCodes = s => String(s ?? '').split(',').map(c => c.trim().toUpperCase
 
 // report/plan: filas ya normalizadas por records(). archives: Map código -> ruta.
 // mappings: { 'PROVEEDOR|DIRECCION': 'Nombre Crudos' }. ledger: { 'título\tcódigo': {number, filename} }
+// Proveedores escritos distinto en reporte y plan ("GPO POL" / "Grupo Pol Devices"):
+// se comparan por palabras significativas.
+const GENERIC = new Set(['GRUPO', 'GPO', 'DEVICES', 'DEVICE', 'MEDIA', 'SA', 'DE', 'CV', 'S', 'C', 'V', 'THE', 'OOH', 'DOOH', 'DIGITAL', 'PUBLICIDAD', 'EXTERIOR']);
+const words = v => String(v ?? '').normalize('NFKD').replace(/[^\x00-\x7f]/g, '').toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+const providerWords = v => new Set(words(v).filter(w => !GENERIC.has(w)));
+function sameProvider(a, b) {
+  if (norm(a) === norm(b)) return true;
+  const A = providerWords(a), B = providerWords(b);
+  return [...A].some(w => B.has(w));
+}
+
+// Coincidencia exacta de la dirección (normalizada). Si hay varias ubicaciones con la misma
+// dirección, desempatan la ciudad y el proveedor. Nunca se adivina con direcciones distintas.
+export function exactCandidates(sites, address, provider, city) {
+  let c = sites.filter(s => norm(s.location) === norm(address));
+  if (c.length > 1) { const byCity = c.filter(s => norm(s.city) === norm(city ?? '')); if (byCity.length) c = byCity; }
+  if (c.length > 1) { const exact = c.filter(s => norm(s.provider) === norm(provider)); if (exact.length) c = exact; }
+  if (c.length > 1) { const similar = c.filter(s => sameProvider(s.provider, provider)); if (similar.length) c = similar; }
+  return c;
+}
+
+// Ubicaciones del plan más parecidas a una dirección del reporte (para sugerir, no para asignar).
+export function suggest(sites, row, limit = 5) {
+  const target = new Set(words(row.address));
+  if (!target.size) return [];
+  return sites.map(site => {
+    const w = new Set(words(site.location));
+    const inter = [...target].filter(x => w.has(x)).length;
+    let score = inter / (new Set([...target, ...w]).size || 1);
+    if (norm(site.city) && norm(site.city) === norm(row.city)) score += 0.1;
+    if (sameProvider(site.provider, row.provider)) score += 0.15;
+    // Los números de la dirección (calle, #) pesan más.
+    if ([...target].some(x => /\d/.test(x) && w.has(x))) score += 0.2;
+    return { site, score };
+  }).filter(x => x.score >= 0.3).sort((a, b) => b.score - a.score).slice(0, limit);
+}
+
 export function reconcile(report, plan, archives, mappings = {}, ledgerIn = {}) {
   const sites = [];
   const byTitle = new Map();
@@ -94,12 +131,12 @@ export function reconcile(report, plan, archives, mappings = {}, ledgerIn = {}) 
     const key = norm(provider) + '|' + norm(address);
     const mapped = mappings[key];
     // Coincidencia exacta normalizada de ubicación + proveedor + ciudad; nunca se adivina.
-    const candidates = sites.filter(s => norm(s.location) === norm(address) && norm(s.provider) === norm(provider) && norm(s.city) === norm(row.CIUDAD ?? ''));
+    const candidates = exactCandidates(sites, address, provider, row.CIUDAD);
     const title = mapped ? mapped : candidates.length === 1 ? candidates[0].title : null;
     const codes = splitCodes(row.FOTOCODIGOS);
     for (const code of codes) if (!archives.has(code)) missing.push(code);
     if (!byTitle.has(title)) {
-      unresolved.push({ key, address, provider, version: row.CAMPANA ?? '', codes });
+      unresolved.push({ key, address, provider, city: row.CIUDAD ?? '', version: row.CAMPANA ?? '', codes });
       continue;
     }
     const site = byTitle.get(title);

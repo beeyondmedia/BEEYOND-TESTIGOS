@@ -109,3 +109,22 @@ test('estatus por ubicación', () => {
   assert.deepEqual(siteStatus({ photos: p, notes: [{ version: '24 MSI', text: 'leds dañados' }, { version: 'PROMOS', text: 'leds dañados' }] }),
     { estatus: 'En revisión', comentario: 'leds dañados' });
 });
+
+import { exactCandidates, suggest } from '../js/core.js';
+test('empareja aunque el proveedor esté escrito distinto', () => {
+  const plan = [{ UBICACION: 'AV. VALLARTA #5366, ZAPOPAN, ', NOMBRECRUDOS: '3. GDL_X_Vallarta', MEDIAOWNER: 'Grupo Pol Devices ', CIUDAD: 'GDL' }];
+  const r = reconcile([{ DIRECCION: 'AV. VALLARTA #5366, ZAPOPAN', FOTOCODIGOS: 'A1', PROVEEDOR: 'GPO POL', CIUDAD: 'GDL' }], plan, ARCHIVES());
+  assert.equal(r.counts.linked, 1); assert.equal(r.unresolved.length, 0);
+});
+test('misma dirección en dos ubicaciones: desempata el proveedor', () => {
+  const sites = [{ title: 'a', location: 'CEDROS', provider: 'West Media Devices', city: 'GDL' }, { title: 'b', location: 'CEDROS', provider: 'Grupo Pol Devices', city: 'GDL' }];
+  assert.deepEqual(exactCandidates(sites, 'Cedros', 'WEST MEDIA', 'GDL').map(s => s.title), ['a']);
+  assert.equal(exactCandidates(sites, 'Cedros', 'OTRO', 'GDL').length, 2);   // ambiguo: no adivina
+});
+test('sugiere la ubicación más parecida', () => {
+  const sites = [{ title: 'x', location: 'GLORIETA DE LA MINERVA II (LANDMARK)', provider: 'West Media Devices', city: 'GDL' },
+    { title: 'y', location: 'MINERVA (LANDMARK - VISTA NATURAL)', provider: 'West Media Devices', city: 'GDL' },
+    { title: 'z', location: 'AUTOPISTA AEROPUERTO NO. 3167', provider: 'West Media Devices', city: 'GDL' }];
+  assert.equal(suggest(sites, { address: 'MINERVA LANDMARK VISTA NATURAL', provider: 'WEST MEDIA', city: 'GDL' })[0].site.title, 'y');
+  assert.equal(suggest(sites, { address: 'AUT. AEROPUERTO 3167', provider: 'WEST MEDIA', city: 'GDL' })[0].site.title, 'z');
+});

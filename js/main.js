@@ -1,8 +1,8 @@
 import { FIREBASE_CONFIG, DOMINIO, ADMIN_PRINCIPAL } from './config.js';
-import { recordsFromSheets, indexArchive, reconcile, exportList, ledgerToList, ledgerFromList, mappingsFromList, suffix, siteStatus } from './core.js';
+import { recordsFromSheets, indexArchive, reconcile, exportList, ledgerToList, ledgerFromList, mappingsFromList, suffix, siteStatus, suggest } from './core.js';
 import { openZip, readEntry, buildZip } from './zip.js';
 import { readXlsx } from './xlsx.js';
-import { buildPpt, buildBlankPpt, slideTexts, photoLayout, slideContent, STATUS_COLORS } from './ppt.js';
+import { buildPpt, buildBlankPpt, slideTexts, photoLayout, slideContent, STATUS_COLORS, STATUS_BOX } from './ppt.js';
 import { analyzePpt, matchSites, pptStatus as pptStatusRaw, planUpdate, updatePpt, faltantes } from './pptmerge.js';
 
 const $ = id => document.getElementById(id);
@@ -185,7 +185,18 @@ function render(result, seleccion, keepSelection = false) {
     const label = node('div'); label.append(node('b', row.address || '(sin dirección)'), node('span', [row.provider, plural(row.codes.length, 'foto', 'fotos')].filter(Boolean).join(' · '), 'sub'));
     const select = node('select'); select.setAttribute('aria-label', 'Nombre Crudos para ' + row.address);
     const blank = node('option', 'Elegir Nombre Crudos…'); blank.value = ''; select.append(blank);
-    for (const site of result.sites) { const o = node('option', site.title); o.value = site.title; select.append(o); }
+    // Primero las más parecidas (la mejor ya seleccionada; solo se guarda al confirmar).
+    const sug = suggest(result.sites, row);
+    if (sug.length) {
+      const g = node('optgroup'); g.label = 'Más parecidas';
+      for (const { site } of sug) { const o = node('option', site.title + ' · ' + site.location); o.value = site.title; g.append(o); }
+      select.append(g);
+      // Solo se preselecciona si es claramente la mejor (muy parecida y sin otra cerca).
+      if (sug[0].score >= 0.75 && (sug.length < 2 || sug[0].score - sug[1].score >= 0.2)) { select.value = sug[0].site.title; line.classList.add('suggested'); }
+    }
+    const all = node('optgroup'); all.label = 'Todas las ubicaciones del plan';
+    for (const site of result.sites) { const o = node('option', site.title); o.value = site.title; all.append(o); }
+    select.append(all);
     const button = node('button', 'Confirmar', 'btn primary'); button.type = 'button';
     button.onclick = async () => {
       if (!select.value) return;
@@ -200,6 +211,8 @@ function render(result, seleccion, keepSelection = false) {
         message('Equivalencia guardada para toda la campaña.', 'ok');
       } catch (e) { message(explain(e), 'err'); button.disabled = false; }
     };
+    if (select.value) label.append(node('span', 'Sugerencia: revisa que sea la correcta y confirma.', 'sub sug'));
+    else if (sug.length) label.append(node('span', 'Las más parecidas están al inicio de la lista.', 'sub'));
     line.append(label, select, button); list.append(line);
   }
   if (!unique.size) list.append(node('div', 'Todas las direcciones del reporte tienen una ubicación del plan.', 'msg ok'));
@@ -236,7 +249,7 @@ function drawFilters() {
     seg.append(b);
   }
 }
-const PPT_PILL = { ok: ['En PPT', 'p-ok'], falta: ['Falta en PPT', 'p-new'], completar: ['Completar en PPT', 'p-warn'], pendiente: ['Pendiente en PPT', 'p-idle'], parcial: ['Incompleta en PPT', 'p-warn'] };
+const PPT_PILL = { ok: ['En PPT', 'p-ok'], falta: ['Falta en PPT', 'p-new'], completar: ['Sin fotos en PPT · elige fotos', 'p-warn'], pendiente: ['Pendiente en PPT', 'p-idle'], parcial: ['Incompleta en PPT', 'p-warn'] };
 const pptPill = site => {
   const st = pptStatus(site, pptSlide(site));
   if (st !== 'parcial') return PPT_PILL[st];
@@ -273,16 +286,20 @@ function drawSlide() {
   const grid = $('slide-grid'); grid.replaceChildren();
   const parcial = isParcial(site);
   const prev = parcial ? pptSlide(site).photos : 0;
-  let { photos, status } = parcial
-    ? { photos: (state.selected.get(site.title) || []).map(c => site.photos.find(p => p.code === c)).filter(Boolean).slice(0, faltantes(pptSlide(site), perSlide())), status: siteStatus(site) }
-    : slideContent(site, state.selected.get(site.title), perSlide());
-  if (prev + photos.length + (status ? 1 : 0) > 4) status = null;
+  const n = Math.min(4, perSlide());
+  const photos = parcial
+    ? (state.selected.get(site.title) || []).map(c => site.photos.find(p => p.code === c)).filter(Boolean).slice(0, faltantes(pptSlide(site), perSlide()))
+    : slideContent(site, state.selected.get(site.title), n).photos;
+  const status = siteStatus(site);
   const place = (slot, b) => Object.assign(slot.style, { left: b.x / 10 * 100 + '%', top: b.y / 5.625 * 100 + '%', width: b.w / 10 * 100 + '%', height: b.h / 5.625 * 100 + '%' });
-  const boxes = photoLayout(prev + photos.length + (status ? 1 : 0));
+  const total = prev + photos.length;
+  // Sin fotos elegidas: espacios vacíos (en PowerPoint se llenan con un clic).
+  const boxes = photoLayout(total || n);
   for (let i = 0; i < prev; i++) { const slot = node('div', 'Foto que ya está en tu PPT', 'slot'); place(slot, boxes[i]); grid.append(slot); }
   photos.forEach((photo, i) => { const slot = node('div', undefined, 'slot'); place(slot, boxes[prev + i]); slot.append(picture(photo)); grid.append(slot); });
+  if (!total) boxes.forEach((b, i) => { const slot = node('div', `Foto ${i + 1} · espacio vacío`, 'slot empty'); place(slot, b); grid.append(slot); });
   if (status) {
-    const card = node('div', undefined, 'slot card'); place(card, boxes[prev + photos.length]);
+    const card = node('div', undefined, 'slot card'); place(card, STATUS_BOX);
     card.style.borderColor = '#' + STATUS_COLORS[status.estatus];
     const h = node('b', status.estatus.toUpperCase()); h.style.color = '#' + STATUS_COLORS[status.estatus];
     card.append(h, node('span', status.comentario)); grid.append(card);
@@ -291,8 +308,7 @@ function drawSlide() {
 
 const STATUS_PILL = { 'Con observaciones': 'p-bad', 'En revisión': 'p-warn', 'Pendiente': 'p-idle' };
 const isParcial = site => state.ppt && pptStatus(site, pptSlide(site)) === 'parcial';
-const maxPhotos = site => isParcial(site) ? faltantes(pptSlide(site), perSlide())
-  : Number($('layout').value) - (siteStatus(site) && site.photos.length ? 1 : 0);
+const maxPhotos = site => isParcial(site) ? faltantes(pptSlide(site), perSlide()) : Math.min(4, perSlide());
 
 function drawEditor() {
   const site = state.result.sites[state.current];
@@ -303,11 +319,11 @@ function drawEditor() {
   $('site-sub').textContent = [site.location, site.provider, site.city].filter(Boolean).join(' · ') + st;
   const stt = siteStatus(site);
   $('site-status').hidden = !stt || stt.estatus === 'Pendiente';
-  if (stt) $('site-status').textContent = `Reporte: ${stt.estatus} — ${stt.comentario}. Va en la diapositiva en un recuadro y la app de Comprobación lo registra como estatus y comentario.`;
+  if (stt) $('site-status').textContent = `Reporte: ${stt.estatus} — ${stt.comentario}. Va en un recuadro en el panel coral de la diapositiva y la app de Comprobación lo registra como estatus y comentario.`;
   if (isParcial(site)) {
     const n = pptSlide(site).photos, f = faltantes(pptSlide(site), perSlide());
     $('site-status').hidden = false;
-    $('site-status').textContent = `Tu PPT ya tiene ${plural(n, 'foto', 'fotos')} de esta ubicación. Elige ${f === 1 ? 'la foto que falta' : `las ${f} que faltan`} (por ejemplo, la otra versión): al actualizar se agregan a la misma diapositiva junto con las que ya tiene. Si no eliges, la diapositiva se queda igual.` + (stt && stt.estatus !== 'Pendiente' ? ` Reporte: ${stt.estatus} — ${stt.comentario}.` : '');
+    $('site-status').textContent = `Tu PPT ya tiene ${plural(n, 'foto', 'fotos')} de esta ubicación. Elige ${f === 1 ? 'la foto que falta' : `las ${f} que faltan`} (por ejemplo, la otra versión): al actualizar se agregan a la misma diapositiva junto con las que ya tiene. Si no eliges, la diapositiva se queda igual. Si aparecen marcadas fotos que ya están en tu PPT, desmárcalas para no repetirlas.` + (stt && stt.estatus !== 'Pendiente' ? ` Reporte: ${stt.estatus} — ${stt.comentario}.` : '');
   }
   const codes = state.selected.get(site.title) || [];
   for (const photo of site.photos) {
@@ -318,7 +334,7 @@ function drawEditor() {
     checkbox.onchange = () => {
       let picked = state.selected.get(site.title) || [];
       if (checkbox.checked) {
-        if (picked.length >= maxPhotos(site)) { checkbox.checked = false; message(isParcial(site) ? `A esta diapositiva de tu PPT solo le ${maxPhotos(site) === 1 ? 'falta 1 foto' : 'faltan ' + maxPhotos(site) + ' fotos'}.` : `Elige como máximo ${maxPhotos(site)} fotos para esta diapositiva` + (maxPhotos(site) < Number($('layout').value) ? ' (el comentario del reporte ocupa un lugar).' : '.'), 'warn'); return; }
+        if (picked.length >= maxPhotos(site)) { checkbox.checked = false; message(isParcial(site) ? `A esta diapositiva de tu PPT solo le ${maxPhotos(site) === 1 ? 'falta 1 foto' : 'faltan ' + maxPhotos(site) + ' fotos'}.` : `Elige como máximo ${maxPhotos(site)} fotos para esta diapositiva (cámbialo en Fotos por diapositiva).`, 'warn'); return; }
         picked = [...picked, photo.code];
       } else picked = picked.filter(c => c !== photo.code);
       state.selected.set(site.title, picked);
@@ -366,7 +382,7 @@ function drawDelivery() {
   setMsg(box, `PPT cargada: ${state.ppt.name} (${plural(state.ppt.slides.length, 'diapositiva', 'diapositivas')}).\n` +
     (actions.length ? 'Al actualizar: ' + [add && `se agregarán ${plural(add, 'ubicación que falta', 'ubicaciones que faltan')}`, rep && `${rep === 1 ? 'se completará 1 pendiente' : `se completarán ${rep} pendientes`} con fotos nuevas`, fill && `se agregarán las fotos elegidas a ${plural(fill, 'diapositiva incompleta', 'diapositivas incompletas')} (en la misma diapositiva)`].filter(Boolean).join(', ') + '. Lo demás queda igual.' : 'La PPT ya tiene todas las ubicaciones; no hay nada por agregar ni completar.') +
     (pend ? ` ${plural(pend, 'ubicación sigue', 'ubicaciones siguen')} como Pendiente porque no tienen fotos en este lote.` : '') +
-    (incompletas.length ? `\n${plural(incompletas.length, 'diapositiva incompleta', 'diapositivas incompletas')} sin fotos elegidas: ${incompletas.length === 1 ? 'se queda' : 'se quedan'} igual. Para completarlas, usa el filtro "Incompletas en PPT" del paso 3 y elige las fotos que faltan.` : ''),
+    (incompletas.length ? `\n${plural(incompletas.length, 'diapositiva incompleta o sin fotos', 'diapositivas incompletas o sin fotos')} de tu PPT sin fotos elegidas: ${incompletas.length === 1 ? 'se queda' : 'se quedan'} igual. Para completarlas, usa el filtro "Por agregar o completar en PPT" del paso 3 y elige las fotos.` : ''),
   actions.length ? 'warn' : 'ok');
   $('update-ppt').disabled = !actions.length;
   $('update-ppt').textContent = actions.length ? `Actualizar PPT cargada (${plural(actions.length, 'cambio', 'cambios')})` : 'Actualizar PPT cargada';

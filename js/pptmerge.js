@@ -99,8 +99,9 @@ export function pptStatus(site, slide, perSlide = 0) {
 // Fotos que se pueden agregar a una diapositiva incompleta.
 export const faltantes = (slide, perSlide) => Math.max(0, Math.min(4, perSlide) - (slide?.photos || 0));
 
-// opts: { perSlide, selected: Map título -> códigos }. Las incompletas solo se tocan si elegiste
-// fotos para ellas (la app no sabe cuáles de las fotos nuevas ya están en tu PPT).
+// opts: { perSlide, selected: Map título -> códigos }. Las incompletas y las pendientes solo se tocan
+// si elegiste fotos para ellas (la app no sabe cuáles de las fotos nuevas ya están en tu PPT).
+// Las ubicaciones que faltan se agregan siempre (con las fotos elegidas o con espacios vacíos).
 export function planUpdate(analysis, sites, opts = {}) {
   const match = matchSites(analysis, sites);
   const actions = [], incompletas = [];
@@ -108,7 +109,12 @@ export function planUpdate(analysis, sites, opts = {}) {
     const slide = match.get(site.title);
     const st = pptStatus(site, slide, opts.perSlide);
     if (st === 'falta') actions.push({ type: 'add', site });
-    if (st === 'completar') actions.push({ type: 'replace', site, slide });
+    if (st === 'completar') {
+      // Sin fotos en tu PPT: se rearma con las fotos que elijas (sin selección se queda igual).
+      const valid = new Set(site.photos.map(p => p.code));
+      if ((opts.selected?.get(site.title) || []).some(c => valid.has(c))) actions.push({ type: 'replace', site, slide });
+      else incompletas.push(site);
+    }
     if (st === 'parcial') {
       const valid = new Set(site.photos.map(p => p.code));
       const codes = (opts.selected?.get(site.title) || []).filter(c => valid.has(c)).slice(0, faltantes(slide, opts.perSlide));

@@ -78,28 +78,28 @@ export function slideTexts(site) {
   };
 }
 
-// Fotos y recuadro de estatus de una diapositiva. Con recuadro caben como máximo 3 fotos.
+// Fotos y recuadro de estatus de una diapositiva. Solo van las fotos que elegiste:
+// sin selección, la diapositiva lleva espacios vacíos para insertarlas a mano.
 export function slideContent(site, selected, perSlide) {
   const status = siteStatus(site);
-  const max = Math.min(4, perSlide) - (status && site.photos.length ? 1 : 0);
-  const chosen = (selected || []).filter(c => site.photos.some(p => p.code === c));
-  // Si no se eligieron fotos, se usan las primeras vinculadas.
-  const codes = (chosen.length ? chosen : site.photos.map(p => p.code)).slice(0, Math.max(1, max));
-  return { photos: codes.map(c => site.photos.find(p => p.code === c)), status };
+  const chosen = (selected || []).filter(c => site.photos.some(p => p.code === c)).slice(0, Math.min(4, perSlide));
+  return { photos: chosen.map(c => site.photos.find(p => p.code === c)), status };
 }
 
 export const STATUS_COLORS = { 'Con observaciones': 'E63E5A', 'En revisión': 'B06D00', 'Pendiente': '7A7A7A' };
 
 // Recuadro que lee la app de Comprobación: se llama "BT-ESTATUS"; 1er párrafo = estatus, 2º = comentario.
-function addStatusCard(slide, b, { estatus, comentario }) {
-  const color = STATUS_COLORS[estatus] || '7A7A7A';
+// Va en el panel coral, debajo de la ubicación, para no ocupar el lugar de una foto.
+export const STATUS_BOX = { x: E(248351), y: 3.55, w: 2.92, h: 1.25 };
+function addStatusCard(slide, { estatus, comentario }) {
+  const color = STATUS_COLORS[estatus] || '7A7A7A', b = STATUS_BOX;
   slide.addText([
-    { text: estatus.toUpperCase(), options: { bold: true, fontSize: b.w > 4 ? 22 : 15, color, breakLine: true } },
-    { text: comentario, options: { fontSize: b.w > 4 ? 16 : 11, color: '33414E' } },
+    { text: estatus.toUpperCase(), options: { bold: true, fontSize: 11, color, breakLine: true } },
+    { text: comentario, options: { fontSize: comentario.length > 140 ? 7 : comentario.length > 80 ? 8 : 9, color: '33414E' } },
   ], {
     shape: 'rect', x: b.x, y: b.y, w: b.w, h: b.h, objectName: 'BT-ESTATUS',
-    fill: { color: 'FFFFFF' }, line: { color, width: 2, ...(estatus === 'Pendiente' ? { dashType: 'dash' } : {}) },
-    align: 'center', valign: 'middle', fontFace: FONT, margin: 12, paraSpaceAfter: 6, fit: 'shrink',
+    fill: { color: 'FFFFFF' }, line: { color, width: 1.5 },
+    align: 'left', valign: 'middle', fontFace: FONT, margin: 6, paraSpaceAfter: 3, fit: 'shrink',
   });
 }
 
@@ -136,38 +136,98 @@ function drawFrame(slide, site, title, A) {
   slide.addImage({ data: A['logo.png'], x: E(8712403), y: E(4673498), w: E(557601), h: E(124358), rotate: 270 });
 }
 
+// Diseños con N marcadores de imagen (1 a 4), acomodados como las fotos.
+function defineFotoLayouts(pptx) {
+  for (let n = 1; n <= 4; n++) {
+    pptx.defineSlideMaster({
+      title: 'BT_FOTOS_' + n, background: { color: 'F6F6F6' },
+      objects: photoLayout(n).map((b, i) => ({ placeholder: { options: { name: `foto${n}_${i + 1}`, type: 'body', x: b.x, y: b.y, w: b.w, h: b.h }, text: 'Foto ' + (i + 1) } })),
+    });
+  }
+}
+
+/**
+ * opts: { title, sites, selected: Map título -> códigos, perSlide, zip, entryByName, onProgress, noStatus }
+ * Devuelve { buffer, slides, withPhotos, pending } con el PPT ya listo (marcadores de imagen incluidos).
+ */
 export async function renderPpt(opts) {
   await loadLib();
   const A = await loadAssets();
   const pptx = newDeck(opts.title);
+  defineFotoLayouts(pptx);
+  const n = Math.min(4, Math.max(1, opts.perSlide || 4));
+  const slots = new Map();   // nº de diapositiva -> { n, base } para las que llevan espacios vacíos
   let done = 0, withPhotos = 0;
   for (const site of opts.sites) {
     // Diapositiva incompleta de una PPT ya hecha: sus fotos actuales primero y luego las elegidas.
     const existing = site._existing || [];
-    let { photos, status } = site._existing
+    const { photos, status } = site._existing
       ? { photos: site._fillCodes.map(c => site.photos.find(p => p.code === c)), status: siteStatus(site) }
-      : slideContent(site, opts.selected.get(site.title), opts.perSlide);
-    if (existing.length + photos.length + (status ? 1 : 0) > 4) status = null;
-    const items = [...existing.map(blob => ({ blob })), ...photos];
-    if (items.length) withPhotos++;
-    const slide = pptx.addSlide();
+      : slideContent(site, opts.selected?.get(site.title), n);
+    const items = [...existing.map(blob => ({ blob })), ...photos].slice(0, 4);
+    const slide = items.length ? pptx.addSlide() : pptx.addSlide({ masterName: 'BT_FOTOS_' + n });
     drawFrame(slide, site, opts.title, A);
-
-    // El recuadro de estatus ocupa el lugar de una foto (va al final).
-    const boxes = photoLayout(items.length + (status ? 1 : 0));
-    for (let i = 0; i < items.length; i++) {
-      const it = items[i];
-      let data;
-      try { data = await photo4x3(it.blob || await readEntry(opts.zip, opts.entryByName.get(it.member))); }
-      catch (e) { if (it.blob) throw new Error(`No pude leer una de las fotos que ya tiene tu PPT en la diapositiva de ${site.title}. Complétala a mano o quita esa selección.`); throw e; }
-      const b = boxes[i];
-      slide.addImage({ data, x: b.x, y: b.y, w: b.w, h: b.h });
+    if (items.length) {
+      withPhotos++;
+      const boxes = photoLayout(items.length);
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        let data;
+        try { data = await photo4x3(it.blob || await readEntry(opts.zip, opts.entryByName.get(it.member))); }
+        catch (e) { if (it.blob) throw new Error(`No pude leer una de las fotos que ya tiene tu PPT en la diapositiva de ${site.title}. Complétala a mano o quita esa selección.`); throw e; }
+        const b = boxes[i];
+        slide.addImage({ data, x: b.x, y: b.y, w: b.w, h: b.h });
+      }
+    } else {
+      slots.set(done + 1, { n, base: safeName(site.title) });
     }
-    if (status) addStatusCard(slide, boxes[items.length], status);
+    if (status && !opts.noStatus) addStatusCard(slide, status);
     opts.onProgress?.(++done, opts.sites.length);
   }
-  const buffer = await pptx.write({ outputType: 'arraybuffer' });
+  const buffer = await finishDeck(await pptx.write({ outputType: 'arraybuffer' }), slots);
   return { buffer, slides: opts.sites.length, withPhotos, pending: opts.sites.length - withPhotos };
+}
+
+// Termina el paquete: marcadores de imagen reales (tipo "pic") en los diseños y en las diapositivas
+// sin fotos, y sin las entradas de carpeta que agrega PptxGenJS (algunas nubes fallan al abrirlas).
+async function finishDeck(buffer, slots) {
+  const g = await openZip(new Blob([buffer]));
+  const text = async e => (await readEntry(g, e)).text();
+  const layouts = new Map();   // archivo del diseño -> { n, idxs }
+  for (const e of g.entries) {
+    if (!/^ppt\/slideLayouts\/slideLayout\d+\.xml$/.test(e.name)) continue;
+    const xml = await text(e), m = xml.match(/<p:cSld name="BT_FOTOS_(\d)">/);
+    if (m) layouts.set(e.name, { n: +m[1], xml, idxs: [...xml.matchAll(/<p:ph\s+idx="(\d+)"/g)].map(x => x[1]) });
+  }
+  const byN = new Map([...layouts.entries()].map(([path, l]) => [l.n, { ...l, file: path.split('/').pop() }]));
+  const items = [];
+  for (const e of g.entries) {
+    if (e.dir) continue;
+    if (layouts.has(e.name)) {
+      // Tipo "pic", fondo gris claro y texto centrado.
+      const xml = layouts.get(e.name).xml.replace(/<p:ph\s+idx="(\d+)"\s+hasCustomPrompt="1"\s*\/>/g, '<p:ph type="pic" idx="$1" hasCustomPrompt="1"/>')
+        .replace(/<a:noFill\/><a:ln><\/a:ln><\/p:spPr><p:txBody><a:bodyPr wrap="square" rtlCol="0">/g,
+          '<a:solidFill><a:srgbClr val="E6E6E6"/></a:solidFill><a:ln><a:noFill/></a:ln></p:spPr><p:txBody><a:bodyPr wrap="square" rtlCol="0" anchor="ctr">')
+        .replace(/<a:lvl1pPr indent="0" marL="0">/g, '<a:lvl1pPr indent="0" marL="0" algn="ctr">');
+      items.push(newEntry(e.name, xml));
+      continue;
+    }
+    const m = e.name.match(/^ppt\/slides\/slide(\d+)\.xml$/);
+    const slot = m && slots.get(+m[1]);
+    if (slot) {
+      const l = byN.get(slot.n);
+      // Cada marcador lleva su posición (así sirve aunque la diapositiva pase a otra presentación)
+      // y se llama como el archivo esperado: Nombre Crudos_01, _02…
+      const ph = photoLayout(slot.n).map((b, k) => `<p:sp><p:nvSpPr><p:cNvPr id="${900 + k}" name="${xmlEsc(slot.base + '_' + String(k + 1).padStart(2, '0'))}"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="pic" idx="${l.idxs[k]}"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x="${Math.round(b.x * 914400)}" y="${Math.round(b.y * 914400)}"/><a:ext cx="${Math.round(b.w * 914400)}" cy="${Math.round(b.h * 914400)}"/></a:xfrm></p:spPr></p:sp>`).join('');
+      // Quita los cuadros de texto que PptxGenJS copia del diseño y pone los marcadores de imagen.
+      const xml = (await text(e)).replace(/<p:sp>(?:(?!<\/p:sp>)[\s\S])*?<p:ph\b[\s\S]*?<\/p:sp>/g, '');
+      items.push(newEntry(e.name, xml.replace('</p:spTree>', ph + '</p:spTree>')));
+      continue;
+    }
+    items.push({ name: e.name, zip: g, entry: e });
+  }
+  items.sort((x, y) => (y.name === '[Content_Types].xml') - (x.name === '[Content_Types].xml'));
+  return new Uint8Array(await (await buildZip(items)).arrayBuffer());
 }
 
 export const PPTX_TYPE = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
@@ -182,70 +242,16 @@ export function download(blob, fileName) {
 // PPT nuevo con todas las ubicaciones.
 export async function buildPpt(opts) {
   const out = await renderPpt(opts);
-  // PptxGenJS agrega entradas de carpeta al ZIP; algunas nubes (OneDrive, Drive) fallan al abrirlas.
-  // Se reempaqueta sin ellas, copiando el contenido tal cual.
-  const zip = await openZip(new Blob([out.buffer]));
-  const clean = await buildZip(zip.entries.filter(e => !e.dir).map(entry => ({ name: entry.name, zip, entry })));
-  download(new Blob([clean], { type: PPTX_TYPE }), opts.fileName);
+  download(new Blob([out.buffer], { type: PPTX_TYPE }), opts.fileName);
   return out;
 }
 
 // ---------------------------------------------------------------- PPT en blanco (solo con el plan)
 // Una diapositiva por ubicación con el marco de Beeyond y N marcadores de imagen de PowerPoint
-// (ícono para insertar la foto con un clic; se ajusta sola al espacio). Cada marcador se llama
-// como el archivo esperado (Nombre Crudos_01, _02…) en el panel de selección.
+// (ícono para insertar la foto con un clic; se ajusta sola al espacio).
 export async function buildBlankPpt({ title, sites, slots, fileName, onProgress }) {
-  await loadLib();
-  const A = await loadAssets();
-  const pptx = newDeck(title);
-  const boxes = photoLayout(slots);
-  pptx.defineSlideMaster({
-    title: 'BT_FOTOS', background: { color: 'F6F6F6' },
-    objects: boxes.map((b, i) => ({ placeholder: { options: { name: 'foto' + (i + 1), type: 'body', x: b.x, y: b.y, w: b.w, h: b.h }, text: 'Foto ' + (i + 1) } })),
-  });
-  sites.forEach((site, i) => { drawFrame(pptx.addSlide({ masterName: 'BT_FOTOS' }), site, title, A); onProgress?.(i + 1, sites.length); });
-  const g = await openZip(new Blob([await pptx.write({ outputType: 'arraybuffer' })]));
-  const text = async e => (await readEntry(g, e)).text();
-  const items = [];
-  let layoutPath = '', idxs = [];
-  for (const e of g.entries) {
-    if (!/^ppt\/slideLayouts\/slideLayout\d+\.xml$/.test(e.name)) continue;
-    const xml = await text(e);
-    if (!xml.includes('<p:cSld name="BT_FOTOS">')) continue;
-    layoutPath = e.name;
-    idxs = [...xml.matchAll(/<p:ph\s+idx="(\d+)"/g)].map(m => m[1]);
-  }
-  if (!layoutPath || idxs.length !== slots) throw new Error('No se pudo armar el diseño de la PPT en blanco.');
-  const layoutName = layoutPath.split('/').pop();
-  for (const e of g.entries) {
-    if (e.dir) continue;
-    if (e.name === layoutPath) {
-      // Marcadores de imagen: tipo "pic", fondo gris claro y texto centrado.
-      let xml = await text(e);
-      xml = xml.replace(/<p:ph\s+idx="(\d+)"\s+hasCustomPrompt="1"\s*\/>/g, '<p:ph type="pic" idx="$1" hasCustomPrompt="1"/>')
-        .replace(/<a:noFill\/><a:ln><\/a:ln><\/p:spPr><p:txBody><a:bodyPr wrap="square" rtlCol="0">/g,
-          '<a:solidFill><a:srgbClr val="E6E6E6"/></a:solidFill><a:ln><a:noFill/></a:ln></p:spPr><p:txBody><a:bodyPr wrap="square" rtlCol="0" anchor="ctr">')
-        .replace(/<a:lvl1pPr indent="0" marL="0">/g, '<a:lvl1pPr indent="0" marL="0" algn="ctr">');
-      items.push(newEntry(e.name, xml));
-      continue;
-    }
-    const m = e.name.match(/^ppt\/slides\/slide(\d+)\.xml$/);
-    if (m) {
-      const relsE = g.entries.find(x => x.name === `ppt/slides/_rels/slide${m[1]}.xml.rels`);
-      if (relsE && (await text(relsE)).includes(layoutName)) {
-        const site = sites[+m[1] - 1];
-        const base = safeName(site.title);
-        const ph = idxs.map((idx, k) => `<p:sp><p:nvSpPr><p:cNvPr id="${900 + k}" name="${xmlEsc(base + '_' + String(k + 1).padStart(2, '0'))}"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="pic" idx="${idx}"/></p:nvPr></p:nvSpPr><p:spPr/></p:sp>`).join('');
-        // Quita los cuadros de texto que PptxGenJS copia del diseño y pone los marcadores de imagen.
-        const xml = (await text(e)).replace(/<p:sp>(?:(?!<\/p:sp>)[\s\S])*?<p:ph\b[\s\S]*?<\/p:sp>/g, '');
-        items.push(newEntry(e.name, xml.replace('</p:spTree>', ph + '</p:spTree>')));
-        continue;
-      }
-    }
-    items.push({ name: e.name, zip: g, entry: e });
-  }
-  items.sort((x, y) => (y.name === '[Content_Types].xml') - (x.name === '[Content_Types].xml'));
-  download(new Blob([await buildZip(items)], { type: PPTX_TYPE }), fileName);
+  const out = await renderPpt({ title, sites, perSlide: slots, selected: new Map(), noStatus: true, onProgress });
+  download(new Blob([out.buffer], { type: PPTX_TYPE }), fileName);
   return { slides: sites.length };
 }
 const xmlEsc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
