@@ -293,11 +293,12 @@ function drawSlide() {
   const status = siteStatus(site);
   const place = (slot, b) => Object.assign(slot.style, { left: b.x / 10 * 100 + '%', top: b.y / 5.625 * 100 + '%', width: b.w / 10 * 100 + '%', height: b.h / 5.625 * 100 + '%' });
   const total = prev + photos.length;
-  // Sin fotos elegidas: espacios vacíos (en PowerPoint se llenan con un clic).
-  const boxes = photoLayout(total || n);
+  // Acomodo de "Fotos por diapositiva"; los espacios sin foto quedan vacíos (en PowerPoint se llenan con un clic).
+  const slotsN = Math.max(n, total);
+  const boxes = photoLayout(slotsN);
   for (let i = 0; i < prev; i++) { const slot = node('div', 'Foto que ya está en tu PPT', 'slot'); place(slot, boxes[i]); grid.append(slot); }
   photos.forEach((photo, i) => { const slot = node('div', undefined, 'slot'); place(slot, boxes[prev + i]); slot.append(picture(photo)); grid.append(slot); });
-  if (!total) boxes.forEach((b, i) => { const slot = node('div', `Foto ${i + 1} · espacio vacío`, 'slot empty'); place(slot, b); grid.append(slot); });
+  for (let i = total; i < slotsN; i++) { const slot = node('div', `Foto ${i + 1} · espacio vacío`, 'slot empty'); place(slot, boxes[i]); grid.append(slot); }
   if (status) {
     const card = node('div', undefined, 'slot card'); place(card, STATUS_BOX);
     card.style.borderColor = '#' + STATUS_COLORS[status.estatus];

@@ -156,7 +156,7 @@ export async function renderPpt(opts) {
   const pptx = newDeck(opts.title);
   defineFotoLayouts(pptx);
   const n = Math.min(4, Math.max(1, opts.perSlide || 4));
-  const slots = new Map();   // nº de diapositiva -> { n, base } para las que llevan espacios vacíos
+  const slots = new Map();   // nº de diapositiva -> { n, from, base } para las que llevan espacios vacíos
   let done = 0, withPhotos = 0;
   for (const site of opts.sites) {
     // Diapositiva incompleta de una PPT ya hecha: sus fotos actuales primero y luego las elegidas.
@@ -165,11 +165,15 @@ export async function renderPpt(opts) {
       ? { photos: site._fillCodes.map(c => site.photos.find(p => p.code === c)), status: siteStatus(site) }
       : slideContent(site, opts.selected?.get(site.title), n);
     const items = [...existing.map(blob => ({ blob })), ...photos].slice(0, 4);
-    const slide = items.length ? pptx.addSlide() : pptx.addSlide({ masterName: 'BT_FOTOS_' + n });
+    // Siempre el acomodo de "Fotos por diapositiva": las fotos en los primeros espacios y los que
+    // falten quedan vacíos (marcadores de imagen) para insertarlas a mano.
+    const total = Math.max(n, items.length);
+    const slide = items.length >= total ? pptx.addSlide() : pptx.addSlide({ masterName: 'BT_FOTOS_' + total });
     drawFrame(slide, site, opts.title, A);
+    if (items.length < total) slots.set(done + 1, { n: total, from: items.length, base: safeName(site.title) });
     if (items.length) {
       withPhotos++;
-      const boxes = photoLayout(items.length);
+      const boxes = photoLayout(total);
       for (let i = 0; i < items.length; i++) {
         const it = items[i];
         let data;
@@ -178,8 +182,6 @@ export async function renderPpt(opts) {
         const b = boxes[i];
         slide.addImage({ data, x: b.x, y: b.y, w: b.w, h: b.h });
       }
-    } else {
-      slots.set(done + 1, { n, base: safeName(site.title) });
     }
     if (status && !opts.noStatus) addStatusCard(slide, status);
     opts.onProgress?.(++done, opts.sites.length);
@@ -218,7 +220,7 @@ async function finishDeck(buffer, slots) {
       const l = byN.get(slot.n);
       // Cada marcador lleva su posición (así sirve aunque la diapositiva pase a otra presentación)
       // y se llama como el archivo esperado: Nombre Crudos_01, _02…
-      const ph = photoLayout(slot.n).map((b, k) => `<p:sp><p:nvSpPr><p:cNvPr id="${900 + k}" name="${xmlEsc(slot.base + '_' + String(k + 1).padStart(2, '0'))}"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="pic" idx="${l.idxs[k]}"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x="${Math.round(b.x * 914400)}" y="${Math.round(b.y * 914400)}"/><a:ext cx="${Math.round(b.w * 914400)}" cy="${Math.round(b.h * 914400)}"/></a:xfrm></p:spPr></p:sp>`).join('');
+      const ph = photoLayout(slot.n).map((b, k) => k < slot.from ? '' : `<p:sp><p:nvSpPr><p:cNvPr id="${900 + k}" name="${xmlEsc(slot.base + '_' + String(k + 1).padStart(2, '0'))}"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="pic" idx="${l.idxs[k]}"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x="${Math.round(b.x * 914400)}" y="${Math.round(b.y * 914400)}"/><a:ext cx="${Math.round(b.w * 914400)}" cy="${Math.round(b.h * 914400)}"/></a:xfrm></p:spPr></p:sp>`).join('');
       // Quita los cuadros de texto que PptxGenJS copia del diseño y pone los marcadores de imagen.
       const xml = (await text(e)).replace(/<p:sp>(?:(?!<\/p:sp>)[\s\S])*?<p:ph\b[\s\S]*?<\/p:sp>/g, '');
       items.push(newEntry(e.name, xml.replace('</p:spTree>', ph + '</p:spTree>')));
