@@ -96,7 +96,7 @@ async function parse(kind, file) {
   const cache = state.parsed[kind];
   if (cache && cache.sig === fileSig(file)) return cache.value;
   let value;
-  if (kind === 'plan') { message('Leyendo plan ' + file.name + '…'); const r = await recordsFromSheets(await readXlsx(file), ['UBICACION', 'NOMBRECRUDOS'], 'el plan'); value = r.rows; state.sheets.plan = r.sheet; }
+  if (kind === 'plan') { message('Leyendo plan ' + file.name + '…'); const r = await recordsFromSheets(await readXlsx(file), ['UBICACION|DIRECCION', 'NOMBRECRUDOS'], 'el plan'); value = r.rows; state.sheets.plan = r.sheet; }
   if (kind === 'report') { message('Leyendo reporte ' + file.name + '…'); const r = await recordsFromSheets(await readXlsx(file), ['DIRECCION', 'FOTOCODIGOS'], 'el reporte'); value = r.rows; state.sheets.report = r.sheet; }
   if (kind === 'photos') {
     message('Leyendo índice de ' + file.name + '…');
@@ -138,7 +138,8 @@ async function load() {
     const out = await backend.updateCampaign(id, data => apply(data, firma));
     render(out.result, out.seleccion);
     const pend = new Set(out.result.unresolved.map(r => r.key)).size;
-    const hojas = ` Plan: hoja ${state.sheets.plan}. Reporte: hoja ${state.sheets.report}.`;
+    const hojas = ` Plan: hoja ${state.sheets.plan}. Reporte: hoja ${state.sheets.report}.` +
+      (out.result.skipped?.length ? ` Se omitieron ${plural(out.result.skipped.length, 'renglón', 'renglones')} del plan sin Nombre Crudos propio (${[...new Set(out.result.skipped)].join(', ')}).` : '');
     message('Lote listo' + (out.cleared ? ' (lote nuevo: se limpió la selección anterior)' : '') + '.' +
       (pend ? ` Confirma ${plural(pend, 'dirección', 'direcciones')} en el paso 2.` : '') +
       (state.ppt ? ` PPT cargada: ${plural(state.ppt.slides.length, 'diapositiva', 'diapositivas')}.` : '') + hojas, 'ok');
@@ -438,7 +439,7 @@ async function exportBlank() {
   try {
     if (!state.files.plan) throw Error('Elige primero el plan de campaña (XLSX).');
     const plan = await parse('plan', state.files.plan);
-    const { sites } = reconcile([], plan, new Map());
+    const { sites, skipped } = reconcile([], plan, new Map());
     if (!sites.length) throw Error('El plan no tiene ubicaciones con Nombre Crudos.');
     const title = $('blank-title').value.trim() || defaultTitle();
     $('blank-title').value = title;
@@ -446,7 +447,7 @@ async function exportBlank() {
     const slots = Number($('blank-slots').value);
     message('Armando PPT en blanco…');
     await buildBlankPpt({ title, sites, slots, fileName: safeFile(title) + ' (en blanco).pptx', onProgress: (n, t) => message(`Armando diapositivas… ${n} de ${t}`) });
-    message(`PPT en blanco lista: ${plural(sites.length, 'diapositiva', 'diapositivas')} con ${plural(slots, 'espacio', 'espacios')} para fotos (plan: hoja ${state.sheets.plan}). En PowerPoint, haz clic en el ícono de imagen de cada espacio para insertar la foto.`, 'ok');
+    message(`PPT en blanco lista: ${plural(sites.length, 'diapositiva', 'diapositivas')} con ${plural(slots, 'espacio', 'espacios')} para fotos (plan: hoja ${state.sheets.plan})${skipped.length ? `; se omitieron ${plural(skipped.length, 'renglón', 'renglones')} sin Nombre Crudos propio (${[...new Set(skipped)].join(', ')})` : ''}. En PowerPoint, haz clic en el ícono de imagen de cada espacio para insertar la foto.`, 'ok');
   } catch (e) { console.error(e); message(explain(e), 'err'); }
   finally { button.disabled = false; }
 }

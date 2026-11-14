@@ -128,3 +128,16 @@ test('sugiere la ubicación más parecida', () => {
   assert.equal(suggest(sites, { address: 'MINERVA LANDMARK VISTA NATURAL', provider: 'WEST MEDIA', city: 'GDL' })[0].site.title, 'y');
   assert.equal(suggest(sites, { address: 'AUT. AEROPUERTO 3167', provider: 'WEST MEDIA', city: 'GDL' })[0].site.title, 'z');
 });
+
+test('plan con Dirección/Proveedor, sin Ciudad, y renglones SITIO DE BACK', () => {
+  const rows = [{ A: '# SLIDE', B: 'PROVEEDOR', C: 'Formato', D: 'Dirección', E: 'Nombre Crudos' },
+    { A: '1', B: 'VIA VERDE', C: 'Columna', D: 'Blvd. Adolfo López Mateos 2948', E: '1. CDMX_Columna _Blvd. Adolfo López Mateos 2948' },
+    { A: '', B: 'VIA VERDE', C: 'Columna', D: 'Otra', E: 'SITIO DE BACK' },
+    { A: '', B: 'VIA VERDE', C: 'Columna', D: 'Otra 2', E: 'SITIO DE BACK ' }];
+  const plan = records(rows, ['UBICACION|DIRECCION', 'NOMBRECRUDOS']);
+  const r = reconcile([{ DIRECCION: 'BLVD. ADOLFO LOPEZ MATEOS 2948', FOTOCODIGOS: 'A1', PROVEEDOR: 'VIA VERDE' }], plan, ARCHIVES());
+  assert.equal(r.sites.length, 1); assert.equal(r.skipped.length, 2);
+  assert.deepEqual([r.sites[0].location, r.sites[0].provider, r.sites[0].city, r.sites[0].format], ['Blvd. Adolfo López Mateos 2948', 'VIA VERDE', 'CDMX', 'Columna']);
+  assert.equal(r.counts.linked, 1);
+  assert.throws(() => records(rows, ['UBICACION', 'NOMBRECRUDOS']), /UBICACION/);
+});

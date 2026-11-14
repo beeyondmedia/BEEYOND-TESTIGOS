@@ -16,7 +16,7 @@ export function records(rows, required, label = 'el archivo') {
     const headers = {};
     for (const [col, value] of Object.entries(rows[i])) headers[col] = norm(value);
     const found = new Set(Object.values(headers));
-    if (required.every(r => found.has(r))) {
+    if (required.every(r => r.split('|').some(x => found.has(x)))) {
       return rows.slice(i + 1).map(row => {
         const out = {};
         for (const [col, value] of Object.entries(row)) if (col in headers) out[headers[col]] = value;
@@ -24,7 +24,7 @@ export function records(rows, required, label = 'el archivo') {
       });
     }
   }
-  throw new Error(`No se encontraron las columnas requeridas en ${label}: ` + required.join(', '));
+  throw new Error(`No se encontraron las columnas requeridas en ${label}: ` + required.map(r => r.split('|').join(' o ')).join(', '));
 }
 
 // sheets: [{ name, hidden, rows: () => Promise<filas> }]. Busca la hoja que tenga las columnas requeridas,
@@ -35,7 +35,13 @@ export async function recordsFromSheets(sheets, required, label = 'el archivo') 
     try { return { sheet: sheet.name, rows: records(await sheet.rows(), required, label) }; }
     catch (e) { if (!/columnas requeridas/.test(e.message)) throw e; }
   }
-  throw new Error(`No se encontraron las columnas ${required.join(' y ')} en ninguna hoja de ${label} (hojas: ${sheets.map(s => s.name).join(', ')}).`);
+  throw new Error(`No se encontraron las columnas ${required.map(r => r.split('|').join(' o ')).join(' y ')} en ninguna hoja de ${label} (hojas: ${sheets.map(s => s.name).join(', ')}).`);
+}
+
+function crudosCity(title) {
+  const rest = String(title).replace(/^\s*\d+\s*\.\s*/, '');
+  const parts = rest.split('_');
+  return parts.length > 1 ? parts[0].trim() : '';
 }
 
 export function safeName(value) {
@@ -109,12 +115,19 @@ export function suggest(sites, row, limit = 5) {
 export function reconcile(report, plan, archives, mappings = {}, ledgerIn = {}) {
   const sites = [];
   const byTitle = new Map();
+  // Renglones de respaldo sin nombre real (p. ej. "SITIO DE BACK" repetido) se omiten.
+  const titleCount = new Map();
+  for (const row of plan) { const t = String(row.NOMBRECRUDOS ?? '').trim(); if (t) titleCount.set(t, (titleCount.get(t) || 0) + 1); }
+  const skipped = [];
   for (const row of plan) {
     const title = String(row.NOMBRECRUDOS ?? '').trim();
     if (!title) continue;
+    if (titleCount.get(title) > 1 && !/^\d+\s*\./.test(title)) { skipped.push(title); continue; }
     if (byTitle.has(title)) throw new Error('Nombre Crudos repetido en el plan: ' + title);
+    // El plan puede traer "Ubicación" o "Dirección", "Media Owner" o "Proveedor"; sin columna de ciudad,
+    // se toma del Nombre Crudos ("1. CDMX_Columna_…" -> CDMX).
     const format = row.VENUETYPE || row.TIPODEMEDIO || row.TIPODESOPORTE || row.TIPODEUBICACION || row.FORMATO || row.TIPO || '';
-    const site = { title, location: row.UBICACION ?? '', provider: row.MEDIAOWNER ?? '', city: row.CIUDAD ?? '', format, photos: [], notes: [] };
+    const site = { title, location: row.UBICACION || row.DIRECCION || '', provider: row.MEDIAOWNER || row.PROVEEDOR || '', city: row.CIUDAD || crudosCity(title), format, photos: [], notes: [] };
     sites.push(site); byTitle.set(title, site);
   }
   const ledger = { ...ledgerIn };
@@ -163,7 +176,7 @@ export function reconcile(report, plan, archives, mappings = {}, ledgerIn = {}) 
   const archiveCodes = [...archives.keys()];
   const extra = archiveCodes.filter(c => !referenced.has(c)).sort();
   return {
-    sites, unresolved,
+    sites, unresolved, skipped,
     missing: [...new Set(missing)].sort(),
     extra,
     conflicts: [...new Set(conflicts)].sort(),
