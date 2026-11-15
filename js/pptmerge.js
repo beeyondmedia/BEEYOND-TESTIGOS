@@ -70,60 +70,61 @@ export async function analyzePpt(file) {
   return { file, zip, byName, pres, presRels, W, H, slides, name: file.name };
 }
 
-// Relaciona cada ubicación del plan con su diapositiva: por número de Nombre Crudos y,
-// si no hay número, por el texto de la ubicación.
+// Relaciona cada ubicación del plan con sus diapositivas (puede tener varias si lleva más de
+// "Fotos por diapositiva"): por número de Nombre Crudos y, si no hay número, por el texto de la ubicación.
 export function matchSites(analysis, sites) {
   const bySite = new Map();
   const used = new Set();
   for (const site of sites) {
     const num = parseCrudos(site.title).number;
     const loc = norm(slideTexts(site).location);
-    let slide = num ? analysis.slides.find(s => !used.has(s) && s.number === num) : null;
-    if (!slide) slide = analysis.slides.find(s => !used.has(s) && s.loc && norm(s.loc) === loc);
-    if (slide) used.add(slide);
-    bySite.set(site.title, slide || null);
+    let list = num ? analysis.slides.filter(s => !used.has(s) && s.number === num) : [];
+    if (!list.length) list = analysis.slides.filter(s => !used.has(s) && s.loc && norm(s.loc) === loc);
+    list.forEach(s => used.add(s));
+    bySite.set(site.title, list);
   }
   return bySite;
 }
 
-// Estado de una ubicación respecto a la PPT cargada.
+// Estado de una ubicación respecto a la PPT cargada (slides = sus diapositivas).
 // falta · pendiente (sin fotos y sin fotos nuevas) · completar (sin fotos, hay nuevas)
-// parcial (tiene menos fotos que "Fotos por diapositiva") · ok
-export function pptStatus(site, slide, perSlide = 0) {
-  if (!slide) return 'falta';
-  if (slide.pending) return site.photos.length ? 'completar' : 'pendiente';
-  if (perSlide && slide.photos < Math.min(4, perSlide)) return 'parcial';
+// parcial (su última diapositiva tiene espacio) · ok (llenas)
+export function pptStatus(site, slides, perSlide = 0) {
+  if (!slides || !slides.length) return 'falta';
+  if (slides.every(s => s.pending)) return site.photos.length ? 'completar' : 'pendiente';
+  if (perSlide && slides[slides.length - 1].photos < Math.min(4, perSlide)) return 'parcial';
   return 'ok';
 }
+export const totalFotos = slides => (slides || []).reduce((a, s) => a + s.photos, 0);
 
-// Fotos que se pueden agregar a una diapositiva incompleta.
-export const faltantes = (slide, perSlide) => Math.max(0, Math.min(4, perSlide) - (slide?.photos || 0));
+// Espacio libre en la última diapositiva de la ubicación.
+export const faltantes = (slides, perSlide) => {
+  const last = slides && slides.length ? slides[slides.length - 1] : null;
+  return Math.max(0, Math.min(4, perSlide) - (last?.photos || 0));
+};
 
-// opts: { perSlide, selected: Map título -> códigos }. Las incompletas y las pendientes solo se tocan
-// si elegiste fotos para ellas (la app no sabe cuáles de las fotos nuevas ya están en tu PPT).
+// opts: { perSlide, selected: Map título -> códigos }. Las ubicaciones que ya están en tu PPT solo se tocan
+// si elegiste fotos para ellas (la app no sabe cuáles de las fotos nuevas ya están en tu PPT):
+// - sin fotos en la PPT: se rearma su diapositiva con las elegidas (y sigue en otras si son más);
+// - con espacio en la última diapositiva: se rearma con sus fotos + las elegidas, y lo que no quepa sigue después;
+// - llenas: las elegidas van en diapositivas nuevas justo después.
 // Las ubicaciones que faltan se agregan siempre (con las fotos elegidas o con espacios vacíos).
 export function planUpdate(analysis, sites, opts = {}) {
   const match = matchSites(analysis, sites);
   const actions = [], incompletas = [];
   for (const site of sites) {
-    const slide = match.get(site.title);
-    const st = pptStatus(site, slide, opts.perSlide);
-    if (st === 'falta') actions.push({ type: 'add', site });
-    if (st === 'completar') {
-      // Sin fotos en tu PPT: se rearma con las fotos que elijas (sin selección se queda igual).
-      const valid = new Set(site.photos.map(p => p.code));
-      if ((opts.selected?.get(site.title) || []).some(c => valid.has(c))) actions.push({ type: 'replace', site, slide });
-      else incompletas.push(site);
-    }
-    if (st === 'parcial') {
-      const valid = new Set(site.photos.map(p => p.code));
-      const codes = (opts.selected?.get(site.title) || []).filter(c => valid.has(c)).slice(0, faltantes(slide, opts.perSlide));
-      if (codes.length) actions.push({ type: 'fill', site, slide, codes }); else incompletas.push(site);
-    }
+    const slides = match.get(site.title);
+    const st = pptStatus(site, slides, opts.perSlide);
+    if (st === 'falta') { actions.push({ type: 'add', site }); continue; }
+    const valid = new Set(site.photos.map(p => p.code));
+    const codes = (opts.selected?.get(site.title) || []).filter(c => valid.has(c));
+    const last = slides[slides.length - 1];
+    if (st === 'completar') { if (codes.length) actions.push({ type: 'replace', site, slide: slides[0], codes, first: true }); else incompletas.push(site); }
+    if (st === 'parcial') { if (codes.length) actions.push({ type: 'fill', site, slide: last, codes, first: slides.length === 1 }); else incompletas.push(site); }
+    if (st === 'ok' && codes.length) actions.push({ type: 'append', site, slide: last, codes });
   }
   return { match, actions, incompletas };
 }
-
 /**
  * opts: lo mismo que renderPpt + { analysis, fileName, onProgress }
  * Devuelve { added, replaced }.
@@ -136,20 +137,17 @@ export async function updatePpt(opts) {
   const { match, actions } = planUpdate(analysis, opts.sites, { perSlide: opts.perSlide, selected: opts.selected });
   if (!actions.length) throw new Error('La presentación ya tiene todas las ubicaciones; no hay diapositivas por agregar ni pendientes con fotos nuevas.');
 
-  // Incompletas: se rearma la misma diapositiva con sus fotos actuales + las elegidas.
-  const MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', bmp: 'image/bmp', webp: 'image/webp' };
-  const toRender = [];
-  for (const a of actions) {
-    if (a.type !== 'fill') { toRender.push(a.site); continue; }
-    const existing = [];
-    for (const p of a.slide.photoPics) {
-      const e = analysis.byName.get(p.media);
-      if (e) existing.push(await readEntry(analysis.zip, e, MIME[p.media.split('.').pop().toLowerCase()] || ''));
-    }
-    toRender.push({ ...a.site, _existing: existing, _fillCodes: a.codes });
-  }
+  // Incompletas: se rearma la misma diapositiva con sus fotos actuales (mismos bytes) + las elegidas.
+  const toRender = actions.map(a => {
+    if (a.type === 'add') return a.site;
+    const existing = a.type === 'fill' ? a.slide.photoPics.map(p => analysis.byName.get(p.media)).filter(Boolean).map(entry => ({ zip: analysis.zip, entry })) : [];
+    // Numeración de los espacios vacíos: continúa después de las fotos que ya tiene la ubicación.
+    const all = totalFotos(match.get(a.site.title));
+    const _offset = a.type === 'append' ? all : a.type === 'fill' ? all - a.slide.photos : 0;
+    return { ...a.site, _existing: existing, _fillCodes: a.codes, _noStatus: !a.first, _offset };
+  });
   const gen = await renderPpt({ ...opts, sites: toRender });
-  const g = await openZip(new Blob([gen.buffer]));
+  const g = await openZip(gen.blob);
   const gBy = new Map(g.entries.map(e => [e.name, e]));
   const gText = async n => (await readEntry(g, gBy.get(n))).text();
 
@@ -172,13 +170,13 @@ export async function updatePpt(opts) {
   }
   let presRelsXml = await (await readEntry(base.zip, base.byName.get('ppt/_rels/presentation.xml.rels'))).text();
   const order = base.slides.map(s => s.sldId);        // lista de <p:sldId/> en el orden actual
-  const added = [];
 
-  for (let k = 0; k < actions.length; k++) {
-    const a = actions[k];
-    const gPath = `ppt/slides/slide${k + 1}.xml`;
+  // Copia una diapositiva generada al paquete. Si target viene, la reemplaza; si no, crea una nueva.
+  let gi = 0;
+  const copySlide = async (num, target) => {
+    const gPath = `ppt/slides/slide${num}.xml`;
     let xml = await gText(gPath);
-    const gRels = rels(await gText(`ppt/slides/_rels/slide${k + 1}.xml.rels`));
+    const gRels = rels(await gText(`ppt/slides/_rels/slide${num}.xml.rels`));
     const out = [];
     for (const r of gRels) {
       if (r.type.endsWith('/notesSlide')) continue;
@@ -186,44 +184,59 @@ export async function updatePpt(opts) {
       if (r.type.endsWith('/image')) {
         const src = resolve(gPath, r.target);
         const ext = src.split('.').pop().toLowerCase();
-        const name = `bt-${stamp}-${k + 1}-${r.id}.${ext}`;
-        const bytes = new Uint8Array(await (await readEntry(g, gBy.get(src))).arrayBuffer());
-        extra.push(newEntry('ppt/media/' + name, bytes));
+        const name = `bt-${stamp}-${++gi}.${ext}`;
+        extra.push({ name: 'ppt/media/' + name, zip: g, entry: gBy.get(src) });   // fotos tal cual, sin recomprimir
         out.push(`<Relationship Id="${r.id}" Type="${r.type}" Target="../media/${name}"/>`);
       }
     }
-    if (a.type === 'replace' || a.type === 'fill') {
-      const s = a.slide;
+    if (target) {
       // Conserva las notas de la diapositiva original.
-      for (const r of s.rels) if (r.type.endsWith('/notesSlide')) out.push(`<Relationship Id="rIdBtNotes" Type="${r.type}" Target="${r.target}"/>`);
-      for (const m of s.media) { mediaUse.set(m, mediaUse.get(m) - 1); if (mediaUse.get(m) === 0) replaced.add(m); }
-      replaced.add(s.path); replaced.add(s.relsPath);
-      const name = (s.path.match(/slide(\d+)\.xml$/) || [])[1];
-      xml = xml.replace(/<p:cSld name="[^"]*"/, `<p:cSld name="Slide ${name}"`);
-      extra.push(newEntry(s.path, xml));
-      extra.push(newEntry(s.relsPath, relsDoc(out)));
+      for (const r of target.rels) if (r.type.endsWith('/notesSlide')) out.push(`<Relationship Id="rIdBtNotes" Type="${r.type}" Target="${r.target}"/>`);
+      for (const m of target.media) { mediaUse.set(m, mediaUse.get(m) - 1); if (mediaUse.get(m) === 0) replaced.add(m); }
+      replaced.add(target.path); replaced.add(target.relsPath);
+      const name = (target.path.match(/slide(\d+)\.xml$/) || [])[1];
+      extra.push(newEntry(target.path, xml.replace(/<p:cSld name="[^"]*"/, `<p:cSld name="Slide ${name}"`)));
+      extra.push(newEntry(target.relsPath, relsDoc(out)));
+      return target.sldId;
+    }
+    const n = nextSlide++;
+    const path = `ppt/slides/slide${n}.xml`;
+    extra.push(newEntry(path, xml.replace(/<p:cSld name="[^"]*"/, `<p:cSld name="Slide ${n}"`)));
+    extra.push(newEntry(`ppt/slides/_rels/slide${n}.xml.rels`, relsDoc(out)));
+    ct = ct.replace('</Types>', `<Override PartName="/${path}" ContentType="${SLIDE_CT}"/></Types>`);
+    const rid = 'rId' + nextRid++;
+    presRelsXml = presRelsXml.replace('</Relationships>', `<Relationship Id="${rid}" Type="${SLIDE_TYPE}" Target="slides/slide${n}.xml"/></Relationships>`);
+    return `<p:sldId id="${nextSldId++}" r:id="${rid}"/>`;
+  };
+
+  const newBySite = new Map();   // ubicaciones que faltaban -> sus diapositivas nuevas
+  let addedSlides = 0;
+  for (let k = 0; k < actions.length; k++) {
+    const a = actions[k], nums = gen.bySite[k];
+    if (a.type === 'add') {
+      const ids = [];
+      for (const num of nums) ids.push(await copySlide(num));
+      newBySite.set(a.site.title, ids); addedSlides += ids.length;
     } else {
-      const n = nextSlide++;
-      const path = `ppt/slides/slide${n}.xml`;
-      extra.push(newEntry(path, xml.replace(/<p:cSld name="[^"]*"/, `<p:cSld name="Slide ${n}"`)));
-      extra.push(newEntry(`ppt/slides/_rels/slide${n}.xml.rels`, relsDoc(out)));
-      ct = ct.replace('</Types>', `<Override PartName="/${path}" ContentType="${SLIDE_CT}"/></Types>`);
-      const rid = 'rId' + nextRid++;
-      presRelsXml = presRelsXml.replace('</Relationships>', `<Relationship Id="${rid}" Type="${SLIDE_TYPE}" Target="slides/slide${n}.xml"/></Relationships>`);
-      added.push({ site: a.site, sldId: `<p:sldId id="${nextSldId++}" r:id="${rid}"/>` });
+      // replace / fill: la primera generada sustituye a la diapositiva; append: todas van después de ella.
+      let after = a.slide.sldId, rest = nums;
+      if (a.type !== 'append') { await copySlide(nums[0], a.slide); rest = nums.slice(1); }
+      for (const num of rest) {
+        const id = await copySlide(num);
+        order.splice(order.indexOf(after) + 1, 0, id); after = id; addedSlides++;
+      }
     }
     opts.onProgress?.(`Integrando diapositivas… ${k + 1} de ${actions.length}`);
   }
 
-  // Inserta las nuevas en el orden del plan: después de la ubicación anterior que ya esté en la PPT.
-  const newBySite = new Map(added.map(x => [x.site.title, x.sldId]));
-  const firstMatched = order.findIndex(id => base.slides.some(s => s.sldId === id && [...match.values()].includes(s)));
+  // Inserta las ubicaciones que faltaban en el orden del plan: después de la ubicación anterior que ya esté.
+  const firstMatched = order.findIndex(id => base.slides.some(s => s.sldId === id && [...match.values()].some(l => l.includes(s))));
   let anchor = firstMatched < 0 ? order.length - 1 : firstMatched - 1;
   for (const site of opts.sites) {
-    const slide = match.get(site.title);
-    if (slide) { anchor = order.indexOf(slide.sldId); continue; }
-    const id = newBySite.get(site.title);
-    if (id) { order.splice(anchor + 1, 0, id); anchor += 1; }
+    const slides = match.get(site.title);
+    if (slides && slides.length) { anchor = Math.max(...slides.map(s => order.indexOf(s.sldId))); continue; }
+    const ids = newBySite.get(site.title);
+    if (ids) { order.splice(anchor + 1, 0, ...ids); anchor += ids.length; }
   }
   const pres = base.pres.replace(/<p:sldIdLst>[\s\S]*?<\/p:sldIdLst>|<p:sldIdLst\/>/, `<p:sldIdLst>${order.join('')}</p:sldIdLst>`);
 
@@ -237,7 +250,7 @@ export async function updatePpt(opts) {
   items.sort((x, y) => (y.name === '[Content_Types].xml') - (x.name === '[Content_Types].xml'));
   const blob = await buildZip([...items, ...extra]);
   download(new Blob([blob], { type: PPTX_TYPE }), opts.fileName);
-  return { added: added.length, replaced: actions.filter(a => a.type === 'replace').length, filled: actions.filter(a => a.type === 'fill').length, total: order.length };
+  return { added: newBySite.size, addedSlides, replaced: actions.filter(a => a.type === 'replace').length, filled: actions.filter(a => a.type === 'fill').length, appended: actions.filter(a => a.type === 'append').length, total: order.length };
 }
 
 function relsDoc(list) {

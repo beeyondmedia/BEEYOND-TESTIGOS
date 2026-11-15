@@ -2,13 +2,13 @@ import { FIREBASE_CONFIG, DOMINIO, ADMIN_PRINCIPAL } from './config.js';
 import { recordsFromSheets, indexArchive, reconcile, exportList, ledgerToList, ledgerFromList, mappingsFromList, suffix, siteStatus, suggest } from './core.js';
 import { openZip, readEntry, buildZip } from './zip.js';
 import { readXlsx } from './xlsx.js';
-import { buildPpt, buildBlankPpt, slideTexts, photoLayout, slideContent, STATUS_COLORS, STATUS_BOX } from './ppt.js';
-import { analyzePpt, matchSites, pptStatus as pptStatusRaw, planUpdate, updatePpt, faltantes } from './pptmerge.js';
+import { buildPpt, buildBlankPpt, slideTexts, photoLayout, slideContent, chunks, MAX_FOTOS, STATUS_COLORS, STATUS_BOX } from './ppt.js';
+import { analyzePpt, matchSites, pptStatus as pptStatusRaw, planUpdate, updatePpt, faltantes, totalFotos } from './pptmerge.js';
 
 const $ = id => document.getElementById(id);
 const perSlide = () => Number($('layout').value);
 const pptStatus = (site, slide) => pptStatusRaw(site, slide, perSlide());
-const pptSlide = site => state.pptMatch.get(site.title);
+const pptSlide = site => state.pptMatch.get(site.title) || [];   // diapositivas de la ubicación en la PPT cargada
 const DEMO = new URLSearchParams(location.search).has('demo') || !FIREBASE_CONFIG.apiKey;
 const KINDS = ['plan', 'report', 'photos'];
 let backend;
@@ -253,9 +253,10 @@ function drawFilters() {
 const PPT_PILL = { ok: ['En PPT', 'p-ok'], falta: ['Falta en PPT', 'p-new'], completar: ['Sin fotos en PPT · elige fotos', 'p-warn'], pendiente: ['Pendiente en PPT', 'p-idle'], parcial: ['Incompleta en PPT', 'p-warn'] };
 const pptPill = site => {
   const st = pptStatus(site, pptSlide(site));
+  const sl = pptSlide(site), d = sl.length > 1 ? ` (${sl.length} diap.)` : '';
+  if (st === 'ok') return [`En PPT · ${plural(totalFotos(sl), 'foto', 'fotos')}${d}`, 'p-ok'];
   if (st !== 'parcial') return PPT_PILL[st];
-  const n = pptSlide(site).photos, f = faltantes(pptSlide(site), perSlide());
-  return [`En PPT ${n} de ${Math.min(4, perSlide())} · faltan ${f}`, 'p-warn'];
+  return [`En PPT · ${plural(totalFotos(sl), 'foto', 'fotos')}${d} · caben ${faltantes(sl, perSlide())} más`, 'p-warn'];
 };
 function drawSites(jump = false) {
   const target = $('sites'); target.replaceChildren();
@@ -272,7 +273,7 @@ function drawSites(jump = false) {
     if (state.ppt) { const [t, cls] = pptPill(site); tags.append(node('span', t, 'pill ' + cls)); }
     button.append(tags);
     button.className = index === state.current ? 'active' : '';
-    button.onclick = () => { state.current = index; drawSites(); drawEditor(); };
+    button.onclick = () => { state.current = index; state.page = 0; drawSites(); drawEditor(); };
     target.append(button);
   }
   if (!list.length) target.append(node('div', 'Ninguna ubicación con este filtro.', 'empty'));
@@ -285,32 +286,45 @@ function drawSlide() {
   $('slide-campaign').textContent = $('ppt-title').value.trim() || defaultTitle();
   $('slide-location').textContent = t.location; $('slide-format').textContent = t.format; $('slide-city').textContent = t.city;
   const grid = $('slide-grid'); grid.replaceChildren();
-  const parcial = isParcial(site);
-  const prev = parcial ? pptSlide(site).photos : 0;
   const n = Math.min(4, perSlide());
-  const photos = parcial
-    ? (state.selected.get(site.title) || []).map(c => site.photos.find(p => p.code === c)).filter(Boolean).slice(0, faltantes(pptSlide(site), perSlide()))
-    : slideContent(site, state.selected.get(site.title), n).photos;
+  // En una PPT ya hecha con espacio en su última diapositiva, esas fotos van primero.
+  const parcial = isParcial(site), lleno = state.ppt && ['ok'].includes(pptStatus(site, pptSlide(site)));
+  const prev = parcial ? pptSlide(site)[pptSlide(site).length - 1].photos : 0;
+  const photos = slideContent(site, state.selected.get(site.title)).photos;
+  const items = [...Array(prev).fill(null), ...photos];
+  const pages = chunks(items.length, n);
+  state.page = Math.min(state.page || 0, pages.length - 1);
+  const [a, b] = pages[state.page];
+  const part = items.slice(a, b);
   const status = siteStatus(site);
-  const place = (slot, b) => Object.assign(slot.style, { left: b.x / 10 * 100 + '%', top: b.y / 5.625 * 100 + '%', width: b.w / 10 * 100 + '%', height: b.h / 5.625 * 100 + '%' });
-  const total = prev + photos.length;
+  const place = (slot, bx) => Object.assign(slot.style, { left: bx.x / 10 * 100 + '%', top: bx.y / 5.625 * 100 + '%', width: bx.w / 10 * 100 + '%', height: bx.h / 5.625 * 100 + '%' });
   // Acomodo de "Fotos por diapositiva"; los espacios sin foto quedan vacíos (en PowerPoint se llenan con un clic).
-  const slotsN = Math.max(n, total);
-  const boxes = photoLayout(slotsN);
-  for (let i = 0; i < prev; i++) { const slot = node('div', 'Foto que ya está en tu PPT', 'slot'); place(slot, boxes[i]); grid.append(slot); }
-  photos.forEach((photo, i) => { const slot = node('div', undefined, 'slot'); place(slot, boxes[prev + i]); slot.append(picture(photo)); grid.append(slot); });
-  for (let i = total; i < slotsN; i++) { const slot = node('div', `Foto ${i + 1} · espacio vacío`, 'slot empty'); place(slot, boxes[i]); grid.append(slot); }
-  if (status) {
+  const boxes = photoLayout(n);
+  part.forEach((photo, i) => {
+    const slot = node('div', photo ? undefined : 'Foto que ya está en tu PPT', 'slot'); place(slot, boxes[i]);
+    if (photo) slot.append(picture(photo)); grid.append(slot);
+  });
+  for (let i = part.length; i < n; i++) { const slot = node('div', `Foto ${a + i + 1} · espacio vacío`, 'slot empty'); place(slot, boxes[i]); grid.append(slot); }
+  if (status && state.page === 0 && !lleno && !(parcial && pptSlide(site).length > 1)) {
     const card = node('div', undefined, 'slot card'); place(card, STATUS_BOX);
     card.style.borderColor = '#' + STATUS_COLORS[status.estatus];
     const h = node('b', status.estatus.toUpperCase()); h.style.color = '#' + STATUS_COLORS[status.estatus];
     card.append(h, node('span', status.comentario)); grid.append(card);
   }
+  // Páginas: la ubicación ocupa varias diapositivas si lleva más fotos que "Fotos por diapositiva".
+  const pager = $('slide-pager'); pager.replaceChildren();
+  pager.hidden = pages.length < 2;
+  if (pages.length > 1) {
+    const prevB = node('button', '‹', 'btn small'), nextB = node('button', '›', 'btn small');
+    prevB.type = nextB.type = 'button'; prevB.disabled = state.page === 0; nextB.disabled = state.page === pages.length - 1;
+    prevB.onclick = () => { state.page--; drawSlide(); }; nextB.onclick = () => { state.page++; drawSlide(); };
+    pager.append(prevB, node('span', `Diapositiva ${state.page + 1} de ${pages.length} de esta ubicación` + (lleno ? ' nueva' : ''), 'note'), nextB);
+  }
 }
 
 const STATUS_PILL = { 'Con observaciones': 'p-bad', 'En revisión': 'p-warn', 'Pendiente': 'p-idle' };
 const isParcial = site => state.ppt && pptStatus(site, pptSlide(site)) === 'parcial';
-const maxPhotos = site => isParcial(site) ? faltantes(pptSlide(site), perSlide()) : Math.min(4, perSlide());
+const maxPhotos = () => MAX_FOTOS;
 
 function drawEditor() {
   const site = state.result.sites[state.current];
@@ -322,10 +336,13 @@ function drawEditor() {
   const stt = siteStatus(site);
   $('site-status').hidden = !stt || stt.estatus === 'Pendiente';
   if (stt) $('site-status').textContent = `Reporte: ${stt.estatus} — ${stt.comentario}. Va en un recuadro en el panel coral de la diapositiva y la app de Comprobación lo registra como estatus y comentario.`;
-  if (isParcial(site)) {
-    const n = pptSlide(site).photos, f = faltantes(pptSlide(site), perSlide());
+  const pst = state.ppt ? pptStatus(site, pptSlide(site)) : '';
+  if (pst === 'parcial' || pst === 'ok') {
+    const sl = pptSlide(site), n = totalFotos(sl), f = faltantes(sl, perSlide());
     $('site-status').hidden = false;
-    $('site-status').textContent = `Tu PPT ya tiene ${plural(n, 'foto', 'fotos')} de esta ubicación. Elige ${f === 1 ? 'la foto que falta' : `las ${f} que faltan`} (por ejemplo, la otra versión): al actualizar se agregan a la misma diapositiva junto con las que ya tiene. Si no eliges, la diapositiva se queda igual. Si aparecen marcadas fotos que ya están en tu PPT, desmárcalas para no repetirlas.` + (stt && stt.estatus !== 'Pendiente' ? ` Reporte: ${stt.estatus} — ${stt.comentario}.` : '');
+    $('site-status').textContent = `Tu PPT ya tiene ${plural(n, 'foto', 'fotos')} de esta ubicación${sl.length > 1 ? ` en ${sl.length} diapositivas` : ''}. ` +
+      (pst === 'parcial' ? `Las que elijas (por ejemplo, otra versión) se agregan primero en ${f === 1 ? 'el espacio libre' : `los ${f} espacios libres`} de su última diapositiva y, si no caben, en diapositivas nuevas justo después.` : 'Sus diapositivas están llenas: las que elijas (por ejemplo, otra versión) van en diapositivas nuevas justo después.') +
+      ' Si no eliges, se queda igual. Si aparecen marcadas fotos que ya están en tu PPT, desmárcalas para no repetirlas.' + (stt && stt.estatus !== 'Pendiente' ? ` Reporte: ${stt.estatus} — ${stt.comentario}.` : '');
   }
   const codes = state.selected.get(site.title) || [];
   for (const photo of site.photos) {
@@ -336,12 +353,13 @@ function drawEditor() {
     checkbox.onchange = () => {
       let picked = state.selected.get(site.title) || [];
       if (checkbox.checked) {
-        if (picked.length >= maxPhotos(site)) { checkbox.checked = false; message(isParcial(site) ? `A esta diapositiva de tu PPT solo le ${maxPhotos(site) === 1 ? 'falta 1 foto' : 'faltan ' + maxPhotos(site) + ' fotos'}.` : `Elige como máximo ${maxPhotos(site)} fotos para esta diapositiva (cámbialo en Fotos por diapositiva).`, 'warn'); return; }
+        if (picked.length >= maxPhotos(site)) { checkbox.checked = false; message(`Elige como máximo ${maxPhotos(site)} fotos por ubicación.`, 'warn'); return; }
         picked = [...picked, photo.code];
       } else picked = picked.filter(c => c !== photo.code);
       state.selected.set(site.title, picked);
       card.classList.toggle('on', checkbox.checked);
-      drawSlide(); if (state.ppt) drawDelivery();
+      const pages = chunks(picked.length, perSlide()).length; state.page = Math.max(0, pages - 1);
+      drawSlide(); drawSites(); if (state.ppt) drawDelivery();
     };
     card.onclick = e => { if (e.target !== checkbox && e.target.tagName !== 'LABEL') { checkbox.checked = !checkbox.checked; checkbox.onchange(); } };
     label.append(checkbox, node('span', photo.code));
@@ -379,10 +397,10 @@ function drawDelivery() {
   $('export-ppt').textContent = state.ppt ? 'Descargar PPT completa nueva' : 'Descargar PPT';
   if (!state.ppt) { box.hidden = true; return; }
   const { actions, incompletas } = planUpdate(state.ppt, state.result.sites, { perSlide: perSlide(), selected: state.selected });
-  const add = actions.filter(a => a.type === 'add').length, rep = actions.filter(a => a.type === 'replace').length, fill = actions.filter(a => a.type === 'fill').length;
+  const add = actions.filter(a => a.type === 'add').length, rep = actions.filter(a => a.type === 'replace').length, fill = actions.filter(a => a.type === 'fill').length, app = actions.filter(a => a.type === 'append').length;
   const pend = state.result.sites.filter(s => pptStatus(s, state.pptMatch.get(s.title)) === 'pendiente').length;
   setMsg(box, `PPT cargada: ${state.ppt.name} (${plural(state.ppt.slides.length, 'diapositiva', 'diapositivas')}).\n` +
-    (actions.length ? 'Al actualizar: ' + [add && `se agregarán ${plural(add, 'ubicación que falta', 'ubicaciones que faltan')}`, rep && `${rep === 1 ? 'se completará 1 pendiente' : `se completarán ${rep} pendientes`} con fotos nuevas`, fill && `se agregarán las fotos elegidas a ${plural(fill, 'diapositiva incompleta', 'diapositivas incompletas')} (en la misma diapositiva)`].filter(Boolean).join(', ') + '. Lo demás queda igual.' : 'La PPT ya tiene todas las ubicaciones; no hay nada por agregar ni completar.') +
+    (actions.length ? 'Al actualizar: ' + [add && `se agregarán ${plural(add, 'ubicación que falta', 'ubicaciones que faltan')}`, rep && `${rep === 1 ? 'se completará 1 pendiente' : `se completarán ${rep} pendientes`} con fotos nuevas`, fill && `se agregarán las fotos elegidas a ${plural(fill, 'ubicación incompleta', 'ubicaciones incompletas')} (en su última diapositiva y, si no caben, en otra a continuación)`, app && `${plural(app, 'ubicación ya llena tendrá', 'ubicaciones ya llenas tendrán')} diapositivas nuevas con las fotos elegidas, justo después de las suyas`].filter(Boolean).join(', ') + '. Lo demás queda igual.' : 'La PPT ya tiene todas las ubicaciones; no hay nada por agregar ni completar.') +
     (pend ? ` ${plural(pend, 'ubicación sigue', 'ubicaciones siguen')} como Pendiente porque no tienen fotos en este lote.` : '') +
     (incompletas.length ? `\n${plural(incompletas.length, 'diapositiva incompleta o sin fotos', 'diapositivas incompletas o sin fotos')} de tu PPT sin fotos elegidas: ${incompletas.length === 1 ? 'se queda' : 'se quedan'} igual. Para completarlas, usa el filtro "Por agregar o completar en PPT" del paso 3 y elige las fotos.` : ''),
   actions.length ? 'warn' : 'ok');
@@ -418,7 +436,7 @@ function pptTitle() {
 const safeFile = s => s.replace(/[<>:"/\\|?*\x00-\x1f]/g, '-');
 const pptOpts = title => ({
   title, sites: state.result.sites, selected: state.selected,
-  perSlide: Number($('layout').value), zip: state.zip, entryByName: state.entryByName,
+  perSlide: Number($('layout').value), zip: state.zip, entryByName: state.entryByName, quality: $('ppt-quality').value,
   onProgress: (n, total) => message(typeof n === 'string' ? n : `Armando diapositivas… ${n} de ${total}`),
 });
 
@@ -428,7 +446,7 @@ async function exportPpt() {
     const title = pptTitle();
     message('Armando PPT…');
     const out = await buildPpt({ ...pptOpts(title), fileName: safeFile(title) + '.pptx' });
-    message(`PPT lista: ${plural(out.slides, 'diapositiva', 'diapositivas')} (${out.withPhotos} con fotos, ${out.pending} pendientes).`, 'ok');
+    message(`PPT lista: ${plural(out.slides, 'diapositiva', 'diapositivas')} de ${plural(state.result.sites.length, 'ubicación', 'ubicaciones')} (${out.withPhotos} con fotos, ${out.pending} sin fotos elegidas).`, 'ok');
   } catch (e) { console.error(e); message(readError(e), 'err'); }
   finally { button.disabled = false; }
 }
@@ -459,7 +477,7 @@ async function exportUpdate() {
     message('Actualizando PPT…');
     const base = state.ppt.name.replace(/\.pptx$/i, '');
     const out = await updatePpt({ ...pptOpts(title), analysis: state.ppt, fileName: safeFile(base) + ' (actualizada).pptx' });
-    message('PPT actualizada: ' + [out.added && plural(out.added, 'diapositiva agregada', 'diapositivas agregadas'), out.replaced && plural(out.replaced, 'pendiente completada', 'pendientes completadas'), out.filled && plural(out.filled, 'incompleta completada', 'incompletas completadas')].filter(Boolean).join(', ') + `. Ahora tiene ${out.total}; el resto quedó igual.`, 'ok');
+    message('PPT actualizada: ' + [out.added && plural(out.added, 'ubicación agregada', 'ubicaciones agregadas'), out.replaced && plural(out.replaced, 'pendiente completada', 'pendientes completadas'), out.filled && plural(out.filled, 'incompleta completada', 'incompletas completadas'), out.appended && plural(out.appended, 'ubicación con fotos extra', 'ubicaciones con fotos extra')].filter(Boolean).join(', ') + `. Ahora tiene ${plural(out.total, 'diapositiva', 'diapositivas')}; el resto quedó igual.`, 'ok');
   } catch (e) { console.error(e); message(explain(e), 'err'); }
   finally { button.disabled = false; }
 }

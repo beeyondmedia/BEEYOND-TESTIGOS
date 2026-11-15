@@ -80,6 +80,13 @@ Entra quien tenga cuenta de Google **verificada @beeyondmedia.com** y además **
 
 La interfaz usa los colores de Beeyond (igual que la app de Comprobación) y tiene tema claro y oscuro.
 
+### Calidad de las fotos y más de 4 fotos por ubicación
+
+- **Calidad Original (por defecto):** las fotos van tal cual vienen en el ZIP (mismos bytes, sin reducir ni recomprimir) cuando ya son 4:3 y no vienen giradas; si no, se recortan al centro a 4:3 conservando su resolución. La app no carga todas las fotos en memoria: pone una imagen mínima y la cambia por la foto real al empaquetar. **Ligera** las reduce a 1400 px.
+- **Más fotos que "Fotos por diapositiva":** se pueden elegir hasta 24 por ubicación; se acomodan de N en N y la ubicación continúa en otra diapositiva igual (mismo panel y nombre). La última se completa con espacios vacíos (nombrados `_05`, `_06`… según corresponda). El recuadro de estatus va solo en la primera.
+- **Al actualizar una PPT ya hecha:** si la ubicación ya está llena, las fotos que elijas (p. ej. una 3ª versión) van en diapositivas nuevas justo después de las suyas; si su última diapositiva tiene espacio, se llena primero y lo que no quepa sigue después.
+- La app de Comprobación reconoce las diapositivas de continuación (seguidas y con el mismo texto) como el mismo soporte y suma sus fotos (máximo 5, el de esa app).
+
 ## Pendiente (igual que en la versión local)
 
 - Crear/actualizar Google Slides (botón deshabilitado).

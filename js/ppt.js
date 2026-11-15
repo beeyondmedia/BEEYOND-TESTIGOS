@@ -45,19 +45,63 @@ async function asset(name) {
   return new Promise(resolve => { const r = new FileReader(); r.onload = () => resolve(r.result); r.readAsDataURL(blob); });
 }
 
-// Recorta al centro a 4:3 (como las fotos de la plantilla) y reduce para que el PPT no pese de más.
-// Las originales van intactas en el ZIP.
-async function photo4x3(blob, width = 1400) {
+// ---------------------------------------------------------------- fotos
+// "original": la foto va tal cual (mismos bytes, sin reducir ni recomprimir) si ya es 4:3 y no viene girada;
+// si no, se recorta al centro a 4:3 conservando su resolución (JPEG calidad 92).
+// "ligera": se recorta a 4:3 y se reduce a 1400 px de ancho (archivo mucho más pequeño).
+const MIME_EXT = { 'image/jpeg': 'jpeg', 'image/png': 'png' };
+function sniff(h) {
+  if (h[0] === 0xff && h[1] === 0xd8) return 'image/jpeg';
+  if (h[0] === 0x89 && h[1] === 0x50 && h[2] === 0x4e && h[3] === 0x47) return 'image/png';
+  return '';
+}
+// Orientación EXIF de un JPEG (1 = normal).
+function jpegOrientation(b) {
+  let p = 2;
+  while (p + 4 < b.length && b[p] === 0xff) {
+    const marker = b[p + 1], len = (b[p + 2] << 8) | b[p + 3];
+    if (marker === 0xe1 && b[p + 4] === 0x45 && b[p + 5] === 0x78 && b[p + 6] === 0x69 && b[p + 7] === 0x66) {
+      const t = p + 10, le = b[t] === 0x49;
+      const u16 = o => le ? b[o] | (b[o + 1] << 8) : (b[o] << 8) | b[o + 1];
+      const u32 = o => le ? (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0 : ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
+      const ifd = t + u32(t + 4), n = u16(ifd);
+      for (let k = 0; k < n; k++) { const e = ifd + 2 + k * 12; if (e + 10 > b.length) break; if (u16(e) === 0x0112) return u16(e + 8); }
+      return 1;
+    }
+    if (marker === 0xda) break;
+    p += 2 + len;
+  }
+  return 1;
+}
+
+// src: { zip, entry } (foto del ZIP o de una PPT ya hecha). Devuelve { mime, raw: {zip, entry} } o { mime, blob }.
+async function preparePhoto(src, quality = 'original') {
+  const blob = await readEntry(src.zip, src.entry);
+  const head = new Uint8Array(await blob.slice(0, 131072).arrayBuffer());
+  const mime = sniff(head);
   const bmp = await createImageBitmap(blob, { imageOrientation: 'from-image' });
-  const target = 4 / 3;
-  let sw = bmp.width, sh = bmp.height;
-  if (sw / sh > target) sw = Math.round(sh * target); else sh = Math.round(sw / target);
-  const sx = Math.round((bmp.width - sw) / 2), sy = Math.round((bmp.height - sh) / 2);
-  const w = Math.min(width, sw), h = Math.round(w * 3 / 4);
-  const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h;
-  canvas.getContext('2d').drawImage(bmp, sx, sy, sw, sh, 0, 0, w, h);
-  bmp.close?.();
-  return canvas.toDataURL('image/jpeg', 0.82);
+  try {
+    const orient = mime === 'image/jpeg' ? jpegOrientation(head) : 1;
+    const is43 = Math.abs(bmp.width / bmp.height - 4 / 3) < 0.01;
+    if (quality === 'original' && mime && orient === 1 && is43) return { mime, raw: src };
+    const target = 4 / 3;
+    let sw = bmp.width, sh = bmp.height;
+    if (sw / sh > target) sw = Math.round(sh * target); else sh = Math.round(sw / target);
+    const sx = Math.round((bmp.width - sw) / 2), sy = Math.round((bmp.height - sh) / 2);
+    const w = quality === 'original' ? sw : Math.min(1400, sw), h = Math.round(w * 3 / 4);
+    const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(bmp, sx, sy, sw, sh, 0, 0, w, h);
+    const out = await new Promise(res => canvas.toBlob(res, 'image/jpeg', quality === 'original' ? 0.92 : 0.82));
+    return { mime: 'image/jpeg', blob: out };
+  } finally { bmp.close?.(); }
+}
+
+// Imagen mínima (1×1) que ocupa el lugar de cada foto mientras PptxGenJS arma el archivo;
+// al empaquetar se cambia por la foto real (así no se cargan todas las fotos en memoria).
+const tinyCache = {};
+function tiny(mime) {
+  if (!tinyCache[mime]) { const c = document.createElement('canvas'); c.width = c.height = 1; tinyCache[mime] = c.toDataURL(mime); }
+  return tinyCache[mime];
 }
 
 // "29. CDMX_LANDMARK_Tamarindos" -> { number: '29', city: 'CDMX', format: 'LANDMARK' }
@@ -80,10 +124,19 @@ export function slideTexts(site) {
 
 // Fotos y recuadro de estatus de una diapositiva. Solo van las fotos que elegiste:
 // sin selección, la diapositiva lleva espacios vacíos para insertarlas a mano.
-export function slideContent(site, selected, perSlide) {
+// Si son más que "Fotos por diapositiva", la ubicación continúa en otra diapositiva igual.
+export const MAX_FOTOS = 24;
+export function slideContent(site, selected) {
   const status = siteStatus(site);
-  const chosen = (selected || []).filter(c => site.photos.some(p => p.code === c)).slice(0, Math.min(4, perSlide));
+  const chosen = (selected || []).filter(c => site.photos.some(p => p.code === c)).slice(0, MAX_FOTOS);
   return { photos: chosen.map(c => site.photos.find(p => p.code === c)), status };
+}
+
+// Reparte N fotos en diapositivas de "porDiapositiva" (mínimo una diapositiva).
+export function chunks(total, perSlide) {
+  const n = Math.min(4, Math.max(1, perSlide || 4)), out = [];
+  for (let i = 0; i < Math.max(total, 1); i += n) out.push([i, Math.min(total, i + n)]);
+  return out;
 }
 
 export const STATUS_COLORS = { 'Con observaciones': 'E63E5A', 'En revisión': 'B06D00', 'Pendiente': '7A7A7A' };
@@ -147,8 +200,10 @@ function defineFotoLayouts(pptx) {
 }
 
 /**
- * opts: { title, sites, selected: Map título -> códigos, perSlide, zip, entryByName, onProgress, noStatus }
- * Devuelve { buffer, slides, withPhotos, pending } con el PPT ya listo (marcadores de imagen incluidos).
+ * opts: { title, sites, selected: Map título -> códigos, perSlide, zip, entryByName, quality, onProgress, noStatus }
+ * Cada sitio puede traer _existing (fotos {zip, entry} de una PPT ya hecha), _fillCodes (fotos a agregar)
+ * y _noStatus (no repetir el recuadro de estatus en diapositivas de continuación).
+ * Devuelve { blob, slides, withPhotos, pending, bySite: [[nº de diapositiva…] por sitio] }.
  */
 export async function renderPpt(opts) {
   await loadLib();
@@ -156,44 +211,52 @@ export async function renderPpt(opts) {
   const pptx = newDeck(opts.title);
   defineFotoLayouts(pptx);
   const n = Math.min(4, Math.max(1, opts.perSlide || 4));
-  const slots = new Map();   // nº de diapositiva -> { n, from, base } para las que llevan espacios vacíos
-  let done = 0, withPhotos = 0;
+  const slots = new Map();    // nº de diapositiva -> { n, from, base } para las que llevan espacios vacíos
+  const photos = new Map();   // clave -> foto preparada (se cambia por la imagen mínima al empaquetar)
+  const bySite = [];
+  let slideNo = 0, done = 0, withPhotos = 0, key = 0;
   for (const site of opts.sites) {
-    // Diapositiva incompleta de una PPT ya hecha: sus fotos actuales primero y luego las elegidas.
-    const existing = site._existing || [];
-    const { photos, status } = site._existing
-      ? { photos: site._fillCodes.map(c => site.photos.find(p => p.code === c)), status: siteStatus(site) }
-      : slideContent(site, opts.selected?.get(site.title), n);
-    const items = [...existing.map(blob => ({ blob })), ...photos].slice(0, 4);
-    // Siempre el acomodo de "Fotos por diapositiva": las fotos en los primeros espacios y los que
-    // falten quedan vacíos (marcadores de imagen) para insertarlas a mano.
-    const total = Math.max(n, items.length);
-    const slide = items.length >= total ? pptx.addSlide() : pptx.addSlide({ masterName: 'BT_FOTOS_' + total });
-    drawFrame(slide, site, opts.title, A);
-    if (items.length < total) slots.set(done + 1, { n: total, from: items.length, base: safeName(site.title) });
-    if (items.length) {
-      withPhotos++;
-      const boxes = photoLayout(total);
-      for (let i = 0; i < items.length; i++) {
-        const it = items[i];
-        let data;
-        try { data = await photo4x3(it.blob || await readEntry(opts.zip, opts.entryByName.get(it.member))); }
-        catch (e) { if (it.blob) throw new Error(`No pude leer una de las fotos que ya tiene tu PPT en la diapositiva de ${site.title}. Complétala a mano o quita esa selección.`); throw e; }
-        const b = boxes[i];
-        slide.addImage({ data, x: b.x, y: b.y, w: b.w, h: b.h });
+    // Fotos que ya tenía la diapositiva (PPT ya hecha) primero y luego las elegidas.
+    const existing = (site._existing || []).map(src => ({ src }));
+    const chosen = site._fillCodes
+      ? site._fillCodes.map(c => site.photos.find(p => p.code === c)).filter(Boolean)
+      : slideContent(site, opts.selected?.get(site.title)).photos;
+    const items = [...existing, ...chosen.map(p => ({ src: { zip: opts.zip, entry: opts.entryByName.get(p.member) }, code: p.code }))];
+    const status = siteStatus(site);
+    if (items.length) withPhotos++;
+    const nums = [];
+    for (const [a, b] of chunks(items.length, n)) {
+      const part = items.slice(a, b);
+      const slide = part.length >= n ? pptx.addSlide() : pptx.addSlide({ masterName: 'BT_FOTOS_' + n });
+      slideNo++; nums.push(slideNo);
+      drawFrame(slide, site, opts.title, A);
+      // Los espacios sin foto quedan vacíos (marcadores de imagen) para insertarlas a mano.
+      if (part.length < n) slots.set(slideNo, { n, from: part.length, base: safeName(site.title), offset: a + (site._offset || 0) });
+      const boxes = photoLayout(n);
+      for (let i = 0; i < part.length; i++) {
+        const it = part[i];
+        let prep;
+        try { prep = await preparePhoto(it.src, opts.quality); }
+        catch (e) { throw new Error(it.code ? `No pude leer la foto ${it.code} (${site.title}): ${e.message}` : `No pude leer una de las fotos que ya tiene tu PPT en la diapositiva de ${site.title}. Complétala a mano o quita esa selección.`); }
+        const k = 'BT' + (++key);
+        photos.set(k, { ...prep, code: it.code || '' });
+        const bx = boxes[i];
+        slide.addImage({ data: tiny(prep.mime), x: bx.x, y: bx.y, w: bx.w, h: bx.h, altText: k });
       }
+      if (status && !opts.noStatus && !site._noStatus && nums.length === 1) addStatusCard(slide, status);
     }
-    if (status && !opts.noStatus) addStatusCard(slide, status);
+    bySite.push(nums);
     opts.onProgress?.(++done, opts.sites.length);
   }
-  const buffer = await finishDeck(await pptx.write({ outputType: 'arraybuffer' }), slots);
-  return { buffer, slides: opts.sites.length, withPhotos, pending: opts.sites.length - withPhotos };
+  const blob = await finishDeck(await pptx.write({ outputType: 'arraybuffer' }), slots, photos);
+  return { blob, slides: slideNo, withPhotos, pending: opts.sites.length - withPhotos, bySite };
 }
 
-// Termina el paquete: marcadores de imagen reales (tipo "pic") en los diseños y en las diapositivas
-// sin fotos, y sin las entradas de carpeta que agrega PptxGenJS (algunas nubes fallan al abrirlas).
-async function finishDeck(buffer, slots) {
+// Termina el paquete: fotos reales en lugar de las imágenes mínimas, marcadores de imagen (tipo "pic")
+// en los diseños y en los espacios sin foto, y sin entradas de carpeta (algunas nubes fallan al abrirlas).
+async function finishDeck(buffer, slots, photos = new Map()) {
   const g = await openZip(new Blob([buffer]));
+  const byName = new Map(g.entries.map(e => [e.name, e]));
   const text = async e => (await readEntry(g, e)).text();
   const layouts = new Map();   // archivo del diseño -> { n, idxs }
   for (const e of g.entries) {
@@ -202,9 +265,36 @@ async function finishDeck(buffer, slots) {
     if (m) layouts.set(e.name, { n: +m[1], xml, idxs: [...xml.matchAll(/<p:ph\s+idx="(\d+)"/g)].map(x => x[1]) });
   }
   const byN = new Map([...layouts.entries()].map(([path, l]) => [l.n, { ...l, file: path.split('/').pop() }]));
+  // Primera pasada: qué archivo de medios corresponde a cada foto.
+  const media = new Map(), slideXml = new Map(), changed = new Set();
+  for (const e of g.entries) {
+    const m = e.name.match(/^ppt\/slides\/slide(\d+)\.xml$/);
+    if (!m) continue;
+    let xml = await text(e);
+    if (!xml.includes('descr="BT')) { slideXml.set(e.name, xml); continue; }
+    const relsXml = await text(byName.get(`ppt/slides/_rels/slide${m[1]}.xml.rels`));
+    const relTarget = new Map([...relsXml.matchAll(/<Relationship\b[^>]*>/g)].map(r => [(r[0].match(/Id="([^"]+)"/) || [])[1], (r[0].match(/Target="([^"]+)"/) || [])[1]]));
+    xml = xml.replace(/<p:pic>[\s\S]*?<\/p:pic>/g, pic => {
+      const k = (pic.match(/descr="(BT\d+)"/) || [])[1];
+      if (!k || !photos.has(k)) return pic;
+      const rid = (pic.match(/r:embed="([^"]+)"/) || [])[1];
+      const target = relTarget.get(rid);
+      if (target) media.set('ppt/media/' + target.split('/').pop(), photos.get(k));
+      return pic.replace(/descr="BT\d+"/, `descr="${xmlEsc(photos.get(k).code ? 'Foto ' + photos.get(k).code : 'Foto')}"`);
+    });
+    slideXml.set(e.name, xml); changed.add(e.name);
+  }
   const items = [];
   for (const e of g.entries) {
     if (e.dir) continue;
+    if (media.has(e.name)) {
+      const ph = media.get(e.name);
+      const name = e.name.replace(/\.[a-z]+$/, '.' + MIME_EXT[ph.mime]);
+      if (name !== e.name) throw new Error('Tipo de imagen inesperado en ' + e.name);
+      if (ph.raw) items.push({ name, zip: ph.raw.zip, entry: ph.raw.entry });                // mismos bytes, sin recomprimir
+      else items.push(newEntry(name, new Uint8Array(await ph.blob.arrayBuffer())));
+      continue;
+    }
     if (layouts.has(e.name)) {
       // Tipo "pic", fondo gris claro y texto centrado.
       const xml = layouts.get(e.name).xml.replace(/<p:ph\s+idx="(\d+)"\s+hasCustomPrompt="1"\s*\/>/g, '<p:ph type="pic" idx="$1" hasCustomPrompt="1"/>')
@@ -215,21 +305,23 @@ async function finishDeck(buffer, slots) {
       continue;
     }
     const m = e.name.match(/^ppt\/slides\/slide(\d+)\.xml$/);
-    const slot = m && slots.get(+m[1]);
-    if (slot) {
-      const l = byN.get(slot.n);
-      // Cada marcador lleva su posición (así sirve aunque la diapositiva pase a otra presentación)
-      // y se llama como el archivo esperado: Nombre Crudos_01, _02…
-      const ph = photoLayout(slot.n).map((b, k) => k < slot.from ? '' : `<p:sp><p:nvSpPr><p:cNvPr id="${900 + k}" name="${xmlEsc(slot.base + '_' + String(k + 1).padStart(2, '0'))}"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="pic" idx="${l.idxs[k]}"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x="${Math.round(b.x * 914400)}" y="${Math.round(b.y * 914400)}"/><a:ext cx="${Math.round(b.w * 914400)}" cy="${Math.round(b.h * 914400)}"/></a:xfrm></p:spPr></p:sp>`).join('');
-      // Quita los cuadros de texto que PptxGenJS copia del diseño y pone los marcadores de imagen.
-      const xml = (await text(e)).replace(/<p:sp>(?:(?!<\/p:sp>)[\s\S])*?<p:ph\b[\s\S]*?<\/p:sp>/g, '');
-      items.push(newEntry(e.name, xml.replace('</p:spTree>', ph + '</p:spTree>')));
-      continue;
+    if (m) {
+      let xml = slideXml.get(e.name);
+      const slot = slots.get(+m[1]);
+      if (slot) {
+        const l = byN.get(slot.n);
+        // Cada marcador lleva su posición (así sirve aunque la diapositiva pase a otra presentación)
+        // y se llama como el archivo esperado: Nombre Crudos_01, _02… (continúa en la siguiente diapositiva).
+        const ph = photoLayout(slot.n).map((b, k) => k < slot.from ? '' : `<p:sp><p:nvSpPr><p:cNvPr id="${900 + k}" name="${xmlEsc(slot.base + '_' + String(slot.offset + k + 1).padStart(2, '0'))}"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="pic" idx="${l.idxs[k]}"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x="${Math.round(b.x * 914400)}" y="${Math.round(b.y * 914400)}"/><a:ext cx="${Math.round(b.w * 914400)}" cy="${Math.round(b.h * 914400)}"/></a:xfrm></p:spPr></p:sp>`).join('');
+        // Quita los cuadros de texto que PptxGenJS copia del diseño y pone los marcadores de imagen.
+        xml = xml.replace(/<p:sp>(?:(?!<\/p:sp>)[\s\S])*?<p:ph\b[\s\S]*?<\/p:sp>/g, '').replace('</p:spTree>', ph + '</p:spTree>');
+      }
+      if (slot || changed.has(e.name)) { items.push(newEntry(e.name, xml)); continue; }
     }
     items.push({ name: e.name, zip: g, entry: e });
   }
   items.sort((x, y) => (y.name === '[Content_Types].xml') - (x.name === '[Content_Types].xml'));
-  return new Uint8Array(await (await buildZip(items)).arrayBuffer());
+  return buildZip(items);
 }
 
 export const PPTX_TYPE = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
@@ -244,7 +336,7 @@ export function download(blob, fileName) {
 // PPT nuevo con todas las ubicaciones.
 export async function buildPpt(opts) {
   const out = await renderPpt(opts);
-  download(new Blob([out.buffer], { type: PPTX_TYPE }), opts.fileName);
+  download(new Blob([out.blob], { type: PPTX_TYPE }), opts.fileName);
   return out;
 }
 
@@ -253,7 +345,7 @@ export async function buildPpt(opts) {
 // (ícono para insertar la foto con un clic; se ajusta sola al espacio).
 export async function buildBlankPpt({ title, sites, slots, fileName, onProgress }) {
   const out = await renderPpt({ title, sites, perSlide: slots, selected: new Map(), noStatus: true, onProgress });
-  download(new Blob([out.buffer], { type: PPTX_TYPE }), fileName);
+  download(new Blob([out.blob], { type: PPTX_TYPE }), fileName);
   return { slides: sites.length };
 }
 const xmlEsc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

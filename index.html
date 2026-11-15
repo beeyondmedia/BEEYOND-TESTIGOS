@@ -129,7 +129,8 @@
               <div id="slide-grid" class="slide-grid"></div>
               <span class="slide-logo">Beeyond</span>
             </div>
-            <p class="note">Vista previa. Solo van las fotos que elijas; si no eliges, la diapositiva lleva espacios vacíos para insertar las fotos a mano en PowerPoint. Las fotos originales no se alteran.</p>
+            <div class="row" id="slide-pager" hidden></div>
+            <p class="note">Vista previa. Solo van las fotos que elijas; si eliges más que <b>Fotos por diapositiva</b>, la ubicación continúa en otra diapositiva igual. Los espacios sin foto quedan vacíos para insertarlas a mano en PowerPoint. Las fotos originales no se alteran.</p>
           </div>
         </div>
       </section>
@@ -138,6 +139,7 @@
         <h2>4. Descargar y entregar</h2>
         <div class="row">
           <label class="field grow"><span>Título de la presentación</span><input id="ppt-title" type="text" placeholder="Ej. MP BUEN FIN PREVIA"></label>
+          <label class="field"><span>Calidad de las fotos</span><select id="ppt-quality"><option value="original" selected>Original (sin reducir)</option><option value="ligera">Ligera (archivo más pequeño)</option></select></label>
         </div>
         <div id="ppt-plan" class="msg" hidden></div>
         <div class="row">
@@ -146,7 +148,7 @@
           <button id="export" type="button" class="btn">Descargar ZIP de fotos renombradas</button>
         </div>
         <p class="note"><b>Actualizar PPT cargada:</b> conserva tu presentación tal cual y solo agrega, en el orden del plan, las ubicaciones que le faltan y reemplaza las que estaban como <em>Pendiente</em> y ya tienen fotos.<br>
-        <b>PPT completa nueva:</b> una diapositiva por cada ubicación del plan con el diseño de Beeyond; sin fotos = <em>Pendiente</em>. Las fotos se recortan a 4:3 y se reducen dentro del PPT.<br>
+        <b>PPT completa nueva:</b> una diapositiva por cada ubicación del plan con el diseño de Beeyond; sin fotos = <em>Pendiente</em>. Con calidad <b>Original</b> las fotos van tal cual (sin reducir ni recomprimir) si ya son 4:3; si no, se recortan a 4:3 conservando su resolución. <b>Ligera</b> las reduce a 1400 px para un archivo más pequeño.<br>
         <b>ZIP:</b> todas las fotos vinculadas, renombradas con el Nombre Crudos y copiadas tal cual, sin recomprimir.</p>
       </section>
     </div>
