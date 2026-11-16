@@ -141,3 +141,22 @@ test('plan con Dirección/Proveedor, sin Ciudad, y renglones SITIO DE BACK', () 
   assert.equal(r.counts.linked, 1);
   assert.throws(() => records(rows, ['UBICACION', 'NOMBRECRUDOS']), /UBICACION/);
 });
+
+import { planFromSheets } from '../js/core.js';
+test('plan sin Nombre Crudos: usa la Dirección con el número de # slide', async () => {
+  const sheet = rows => ({ name: 'H', hidden: false, rows: async () => rows });
+  const r = await planFromSheets([sheet([{ A: '# slide', B: 'PROVEEDOR', C: 'Dirección' },
+    { A: '7', B: 'VV', C: 'Blvd. Adolfo López Mateos 2948' }, { B: 'VV', C: 'Periférico Sur 100' }, { B: 'VV', C: 'Periférico Sur 100' }, { B: 'VV' }])]);
+  assert.equal(r.sinCrudos, true);
+  assert.deepEqual(r.rows.map(x => x.NOMBRECRUDOS), ['7. Blvd. Adolfo López Mateos 2948', '2. Periférico Sur 100', '3. Periférico Sur 100', undefined]);
+  const res = reconcile([{ DIRECCION: 'BLVD. ADOLFO LOPEZ MATEOS 2948', FOTOCODIGOS: 'A1', PROVEEDOR: 'VV' }], r.rows, ARCHIVES());
+  assert.equal(res.sites.length, 3); assert.equal(res.counts.linked, 1);
+  assert.equal(res.sites[0].photos[0].filename, '7. Blvd. Adolfo López Mateos 2948_01.jpg');
+  const g = reconcile([], [{ DIRECCION: 'Av. Vallarta 5366, Zapopan, Jalisco', NOMBRECRUDOS: '1. Av. Vallarta 5366' }, { DIRECCION: 'Blvd. A. López Mateos 2948, 10100 Ciudad de México, CDMX', NOMBRECRUDOS: '2. Blvd' }], new Map());
+  assert.deepEqual(g.sites.map(x => x.city), ['GDL', 'CDMX']);
+  const c = await planFromSheets([sheet([{ A: 'Ubicación', B: 'Nombre Crudos' }, { A: 'X', B: '1. CDMX_A_X' }])]);
+  assert.equal(c.sinCrudos, false);
+  // Una hoja oculta de otra campaña con Nombre Crudos no le gana a la hoja visible.
+  const v = await planFromSheets([{ ...sheet([{ A: 'Ubicación', B: 'Nombre Crudos' }, { A: 'VIEJA', B: '1. CDMX_A_Vieja' }]), hidden: true }, sheet([{ A: 'Dirección' }, { A: 'Nueva 1' }])]);
+  assert.equal(v.sinCrudos, true); assert.equal(v.rows[0].NOMBRECRUDOS, '1. Nueva 1');
+});

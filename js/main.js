@@ -1,5 +1,5 @@
 import { FIREBASE_CONFIG, DOMINIO, ADMIN_PRINCIPAL } from './config.js';
-import { recordsFromSheets, indexArchive, reconcile, exportList, ledgerToList, ledgerFromList, mappingsFromList, suffix, siteStatus, suggest } from './core.js';
+import { recordsFromSheets, planFromSheets, indexArchive, reconcile, exportList, ledgerToList, ledgerFromList, mappingsFromList, suffix, siteStatus, suggest } from './core.js';
 import { openZip, readEntry, buildZip } from './zip.js';
 import { readXlsx } from './xlsx.js';
 import { buildPpt, buildBlankPpt, slideTexts, photoLayout, slideContent, chunks, MAX_FOTOS, STATUS_COLORS, STATUS_BOX } from './ppt.js';
@@ -96,7 +96,7 @@ async function parse(kind, file) {
   const cache = state.parsed[kind];
   if (cache && cache.sig === fileSig(file)) return cache.value;
   let value;
-  if (kind === 'plan') { message('Leyendo plan ' + file.name + '…'); const r = await recordsFromSheets(await readXlsx(file), ['UBICACION|DIRECCION', 'NOMBRECRUDOS'], 'el plan'); value = r.rows; state.sheets.plan = r.sheet; }
+  if (kind === 'plan') { message('Leyendo plan ' + file.name + '…'); const r = await planFromSheets(await readXlsx(file)); value = r.rows; state.sheets.plan = r.sheet + (r.sinCrudos ? ' (sin columna Nombre Crudos: se usó la Dirección como nombre)' : ''); }
   if (kind === 'report') { message('Leyendo reporte ' + file.name + '…'); const r = await recordsFromSheets(await readXlsx(file), ['DIRECCION', 'FOTOCODIGOS'], 'el reporte'); value = r.rows; state.sheets.report = r.sheet; }
   if (kind === 'photos') {
     message('Leyendo índice de ' + file.name + '…');

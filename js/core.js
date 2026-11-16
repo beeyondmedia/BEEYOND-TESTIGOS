@@ -38,6 +38,54 @@ export async function recordsFromSheets(sheets, required, label = 'el archivo') 
   throw new Error(`No se encontraron las columnas ${required.map(r => r.split('|').join(' o ')).join(' y ')} en ninguna hoja de ${label} (hojas: ${sheets.map(s => s.name).join(', ')}).`);
 }
 
+// Lee el plan. Si ninguna hoja trae "Nombre Crudos", usa la Dirección/Ubicación como nombre:
+// "N. Dirección", con N de la columna "# slide" (o No./Número) y, si no hay, el número de renglón.
+export async function planFromSheets(sheets) {
+  // Primero las hojas visibles (con Nombre Crudos y, si no, solo con Dirección); luego las ocultas.
+  const tryIn = async (list, required) => { try { return await recordsFromSheets(list, required, 'el plan'); } catch (e) { if (!/No se encontraron las columnas/.test(e.message)) throw e; return null; } };
+  const visible = sheets.filter(x => !x.hidden), hidden = sheets.filter(x => x.hidden);
+  let r = null, sinCrudos = false;
+  for (const list of [visible, hidden]) {
+    if (!list.length) continue;
+    r = await tryIn(list, ['UBICACION|DIRECCION', 'NOMBRECRUDOS']);
+    if (r) break;
+    r = await tryIn(list, ['UBICACION|DIRECCION']);
+    if (r) { sinCrudos = true; break; }
+  }
+  if (!r) throw new Error(`No se encontró en ninguna hoja del plan una columna Ubicación o Dirección (hojas: ${sheets.map(x => x.name).join(', ')}).`);
+  if (!sinCrudos) return { ...r, sinCrudos: false };
+  let seq = 0;
+  const rows = r.rows.map(row => {
+    const loc = String(row.UBICACION || row.DIRECCION || '').trim();
+    if (!loc) return row;
+    seq++;
+    const num = String(row.SLIDE || row.NOSLIDE || row.NO || row.NUMERO || row.NUM || '').trim().replace(/\.0+$/, '');
+    return { ...row, NOMBRECRUDOS: `${/^\d+$/.test(num) ? num : seq}. ${loc}` };
+  });
+  // Direcciones repetidas: se distinguen con (2), (3)…
+  const seen = new Map();
+  for (const row of rows) {
+    if (!row.NOMBRECRUDOS) continue;
+    const k = row.NOMBRECRUDOS, n = (seen.get(k) || 0) + 1; seen.set(k, n);
+    if (n > 1) row.NOMBRECRUDOS = `${k} (${n})`;
+  }
+  return { ...r, rows, sinCrudos: true };
+}
+
+// Ciudad a partir de la dirección, cuando el plan no la trae (ni en una columna ni en el Nombre Crudos).
+const CITY_HINTS = [
+  [/\b(CDMX|CIUDAD DE MEXICO|MEXICO,? D\.?F\.?|DISTRITO FEDERAL)\b/, 'CDMX'],
+  [/\b(GUADALAJARA|ZAPOPAN|TLAQUEPAQUE|TONALA|JALISCO|GDL)\b/, 'GDL'],
+  [/\b(MONTERREY|SAN PEDRO GARZA GARCIA|SAN NICOLAS DE LOS GARZA|GUADALUPE,? N\.?L|NUEVO LEON|MTY)\b/, 'MTY'],
+  [/\b(ESTADO DE MEXICO|EDOMEX|NAUCALPAN|TLALNEPANTLA|HUIXQUILUCAN|ECATEPEC|CUAUTITLAN|ATIZAPAN)\b/, 'EDOMEX'],
+  [/\b(QUERETARO)\b/, 'QRO'], [/\b(PUEBLA)\b/, 'PUE'], [/\b(CANCUN|QUINTANA ROO)\b/, 'CUN'],
+];
+function cityFromAddress(address) {
+  const t = String(address ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+  const hit = CITY_HINTS.find(([re]) => re.test(t));
+  return hit ? hit[1] : '';
+}
+
 function crudosCity(title) {
   const rest = String(title).replace(/^\s*\d+\s*\.\s*/, '');
   const parts = rest.split('_');
@@ -127,7 +175,7 @@ export function reconcile(report, plan, archives, mappings = {}, ledgerIn = {}) 
     // El plan puede traer "Ubicación" o "Dirección", "Media Owner" o "Proveedor"; sin columna de ciudad,
     // se toma del Nombre Crudos ("1. CDMX_Columna_…" -> CDMX).
     const format = row.VENUETYPE || row.TIPODEMEDIO || row.TIPODESOPORTE || row.TIPODEUBICACION || row.FORMATO || row.TIPO || '';
-    const site = { title, location: row.UBICACION || row.DIRECCION || '', provider: row.MEDIAOWNER || row.PROVEEDOR || '', city: row.CIUDAD || crudosCity(title), format, photos: [], notes: [] };
+    const site = { title, location: row.UBICACION || row.DIRECCION || '', provider: row.MEDIAOWNER || row.PROVEEDOR || '', city: row.CIUDAD || crudosCity(title) || cityFromAddress(row.UBICACION || row.DIRECCION), format, photos: [], notes: [] };
     sites.push(site); byTitle.set(title, site);
   }
   const ledger = { ...ledgerIn };
