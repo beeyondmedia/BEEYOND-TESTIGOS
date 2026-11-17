@@ -92,7 +92,7 @@ export function matchSites(analysis, sites) {
 export function pptStatus(site, slides, perSlide = 0) {
   if (!slides || !slides.length) return 'falta';
   if (slides.every(s => s.pending)) return site.photos.length ? 'completar' : 'pendiente';
-  if (perSlide && slides[slides.length - 1].photos < Math.min(4, perSlide)) return 'parcial';
+  if (perSlide && slides[slides.length - 1].photos < Math.min(6, perSlide)) return 'parcial';
   return 'ok';
 }
 export const totalFotos = slides => (slides || []).reduce((a, s) => a + s.photos, 0);
@@ -100,7 +100,7 @@ export const totalFotos = slides => (slides || []).reduce((a, s) => a + s.photos
 // Espacio libre en la última diapositiva de la ubicación.
 export const faltantes = (slides, perSlide) => {
   const last = slides && slides.length ? slides[slides.length - 1] : null;
-  return Math.max(0, Math.min(4, perSlide) - (last?.photos || 0));
+  return Math.max(0, Math.min(6, perSlide) - (last?.photos || 0));
 };
 
 // opts: { perSlide, selected: Map título -> códigos }. Las ubicaciones que ya están en tu PPT solo se tocan

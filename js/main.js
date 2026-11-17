@@ -286,7 +286,7 @@ function drawSlide() {
   $('slide-campaign').textContent = $('ppt-title').value.trim() || defaultTitle();
   $('slide-location').textContent = t.location; $('slide-format').textContent = t.format; $('slide-city').textContent = t.city;
   const grid = $('slide-grid'); grid.replaceChildren();
-  const n = Math.min(4, perSlide());
+  const n = Math.min(6, perSlide());
   // En una PPT ya hecha con espacio en su última diapositiva, esas fotos van primero.
   const parcial = isParcial(site), lleno = state.ppt && ['ok'].includes(pptStatus(site, pptSlide(site)));
   const prev = parcial ? pptSlide(site)[pptSlide(site).length - 1].photos : 0;

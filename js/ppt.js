@@ -16,8 +16,19 @@ const CENTER_X = (GRID[0].x + GRID[1].x + PHOTO_W) / 2;   // centro horizontal d
 
 // Acomodo de fotos según cuántas lleva la diapositiva (pulgadas; todas 4:3 y centradas):
 // 1 = una grande · 2 = una arriba de otra · 3 = dos arriba y una centrada abajo · 4 = cuadrícula.
+export const MAX_POR_DIAP = 6;
 export function photoLayout(n) {
-  if (n >= 4) return GRID.map(g => ({ ...g, w: PHOTO_W, h: PHOTO_H }));
+  if (n >= 5) {
+    // 5 o 6: dos filas de 3 del mismo tamaño (4:3), a todo el ancho del área de fotos y centradas en alto;
+    // con 5, la fila de abajo lleva 2 centradas.
+    const left = GRID[0].x, width = GRID[1].x + PHOTO_W - left, gap = 0.15;
+    const w = (width - 2 * gap) / 3, h = w * 3 / 4, y0 = (5.625 - (2 * h + gap)) / 2;
+    const top = [0, 1, 2].map(i => ({ x: left + i * (w + gap), y: y0, w, h }));
+    const bottom = n >= 6 ? [0, 1, 2].map(i => ({ x: left + i * (w + gap), y: y0 + h + gap, w, h }))
+      : [0, 1].map(i => ({ x: CENTER_X - (2 * w + gap) / 2 + i * (w + gap), y: y0 + h + gap, w, h }));
+    return [...top, ...bottom];
+  }
+  if (n === 4) return GRID.map(g => ({ ...g, w: PHOTO_W, h: PHOTO_H }));
   if (n === 3) return [...GRID.slice(0, 2), { x: CENTER_X - PHOTO_W / 2, y: GRID[2].y }].map(g => ({ ...g, w: PHOTO_W, h: PHOTO_H }));
   if (n === 2) {
     const h = 2.42, w = h * 4 / 3, gap = 0.13, y = (5.625 - (2 * h + gap)) / 2;
@@ -134,7 +145,7 @@ export function slideContent(site, selected) {
 
 // Reparte N fotos en diapositivas de "porDiapositiva" (mínimo una diapositiva).
 export function chunks(total, perSlide) {
-  const n = Math.min(4, Math.max(1, perSlide || 4)), out = [];
+  const n = Math.min(MAX_POR_DIAP, Math.max(1, perSlide || 4)), out = [];
   for (let i = 0; i < Math.max(total, 1); i += n) out.push([i, Math.min(total, i + n)]);
   return out;
 }
@@ -191,7 +202,7 @@ function drawFrame(slide, site, title, A) {
 
 // Diseños con N marcadores de imagen (1 a 4), acomodados como las fotos.
 function defineFotoLayouts(pptx) {
-  for (let n = 1; n <= 4; n++) {
+  for (let n = 1; n <= MAX_POR_DIAP; n++) {
     pptx.defineSlideMaster({
       title: 'BT_FOTOS_' + n, background: { color: 'F6F6F6' },
       objects: photoLayout(n).map((b, i) => ({ placeholder: { options: { name: `foto${n}_${i + 1}`, type: 'body', x: b.x, y: b.y, w: b.w, h: b.h }, text: 'Foto ' + (i + 1) } })),
@@ -210,7 +221,7 @@ export async function renderPpt(opts) {
   const A = await loadAssets();
   const pptx = newDeck(opts.title);
   defineFotoLayouts(pptx);
-  const n = Math.min(4, Math.max(1, opts.perSlide || 4));
+  const n = Math.min(MAX_POR_DIAP, Math.max(1, opts.perSlide || 4));
   const slots = new Map();    // nº de diapositiva -> { n, from, base } para las que llevan espacios vacíos
   const photos = new Map();   // clave -> foto preparada (se cambia por la imagen mínima al empaquetar)
   const bySite = [];
