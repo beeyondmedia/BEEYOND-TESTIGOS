@@ -136,7 +136,7 @@ export function slideTexts(site) {
 // Fotos y recuadro de estatus de una diapositiva. Solo van las fotos que elegiste:
 // sin selección, la diapositiva lleva espacios vacíos para insertarlas a mano.
 // Si son más que "Fotos por diapositiva", la ubicación continúa en otra diapositiva igual.
-export const MAX_FOTOS = 24;
+export const MAX_FOTOS = 500;   // sin tope práctico: la ubicación sigue en las diapositivas que hagan falta
 export function slideContent(site, selected) {
   const status = siteStatus(site);
   const chosen = (selected || []).filter(c => site.photos.some(p => p.code === c)).slice(0, MAX_FOTOS);

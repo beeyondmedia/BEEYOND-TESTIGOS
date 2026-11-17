@@ -573,6 +573,16 @@ async function start() {
   for (const kind of [...KINDS, 'ppt']) $(kind).onchange = () => { const f = $(kind).files[0]; if (f) { state.files[kind] = f; showFileName(kind); } };
   $('load').onclick = load;
   $('save').onclick = saveSelection;
+  const pickAll = all => {
+    if (!state.result) return;
+    const site = state.result.sites[state.current];
+    state.selected.set(site.title, all ? site.photos.map(p => p.code).slice(0, MAX_FOTOS) : []);
+    state.page = 0; drawEditor(); drawSites(); if (state.ppt) drawDelivery();
+    const k = (state.selected.get(site.title) || []).length, d = chunks(k, perSlide()).length;
+    message(all ? `${plural(k, 'foto elegida', 'fotos elegidas')}: ${plural(d, 'diapositiva', 'diapositivas')} de ${perSlide()} fotos. Presiona Guardar selección.` : 'Sin fotos elegidas. Presiona Guardar selección.', 'ok');
+  };
+  $('pick-all').onclick = () => pickAll(true);
+  $('pick-none').onclick = () => pickAll(false);
   $('export').onclick = exportZip;
   $('export-ppt').onclick = exportPpt;
   $('update-ppt').onclick = exportUpdate;
