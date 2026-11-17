@@ -19,14 +19,14 @@ const CENTER_X = (GRID[0].x + GRID[1].x + PHOTO_W) / 2;   // centro horizontal d
 export const MAX_POR_DIAP = 6;
 export function photoLayout(n) {
   if (n >= 5) {
-    // 5 o 6: dos filas de 3 del mismo tamaño (4:3), a todo el ancho del área de fotos y centradas en alto;
-    // con 5, la fila de abajo lleva 2 centradas.
-    const left = GRID[0].x, width = GRID[1].x + PHOTO_W - left, gap = 0.15;
-    const w = (width - 2 * gap) / 3, h = w * 3 / 4, y0 = (5.625 - (2 * h + gap)) / 2;
-    const top = [0, 1, 2].map(i => ({ x: left + i * (w + gap), y: y0, w, h }));
-    const bottom = n >= 6 ? [0, 1, 2].map(i => ({ x: left + i * (w + gap), y: y0 + h + gap, w, h }))
-      : [0, 1].map(i => ({ x: CENTER_X - (2 * w + gap) / 2 + i * (w + gap), y: y0 + h + gap, w, h }));
-    return [...top, ...bottom];
+    // 5 o 6: tres filas de 2 del mismo tamaño (4:3), a todo el alto del área de fotos y centradas;
+    // con 5, la última fila lleva 1 centrada.
+    const top = GRID[0].y, height = GRID[2].y + PHOTO_H - top, gap = 0.13, gapX = 0.15;
+    const h = (height - 2 * gap) / 3, w = h * 4 / 3, x0 = CENTER_X - (2 * w + gapX) / 2;
+    const out = [];
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 2; c++) out.push({ x: x0 + c * (w + gapX), y: top + r * (h + gap), w, h });
+    if (n === 5) out.splice(4, 2, { x: CENTER_X - w / 2, y: top + 2 * (h + gap), w, h });
+    return out;
   }
   if (n === 4) return GRID.map(g => ({ ...g, w: PHOTO_W, h: PHOTO_H }));
   if (n === 3) return [...GRID.slice(0, 2), { x: CENTER_X - PHOTO_W / 2, y: GRID[2].y }].map(g => ({ ...g, w: PHOTO_W, h: PHOTO_H }));
